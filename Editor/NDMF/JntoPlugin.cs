@@ -1,5 +1,6 @@
 using nadena.dev.ndmf;
 using Narazaka.VRChat.Jnto.Editor;
+using Narazaka.VRChat.Jnto.Editor.Phase1;
 
 [assembly: ExportsPlugin(typeof(JntoPlugin))]
 
@@ -13,7 +14,7 @@ namespace Narazaka.VRChat.Jnto.Editor
         protected override void Configure()
         {
             InPhase(BuildPhase.Optimizing)
-                .Run("Collect & Apply Texture Optimization", _ => { });
+                .Run(AlphaStripPass.Instance);
         }
     }
 }
