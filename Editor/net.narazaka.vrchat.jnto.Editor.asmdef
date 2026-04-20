@@ -2,7 +2,8 @@
   "name": "net.narazaka.vrchat.jnto.Editor",
   "rootNamespace": "Narazaka.VRChat.Jnto.Editor",
   "references": [
-    "net.narazaka.vrchat.jnto.Runtime"
+    "net.narazaka.vrchat.jnto.Runtime",
+    "nadena.dev.ndmf"
   ],
   "includePlatforms": [ "Editor" ],
   "excludePlatforms": []
