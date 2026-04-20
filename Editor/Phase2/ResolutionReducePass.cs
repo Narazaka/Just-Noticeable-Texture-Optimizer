@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using nadena.dev.ndmf;
 using UnityEngine;
 using Narazaka.VRChat.Jnto.Editor.Phase1;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
 using Narazaka.VRChat.Jnto.Editor.Resolution;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2
@@ -49,12 +50,36 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 if (capped < orig) targets[tex] = capped;
             }
 
+            var pipeline = new Phase2Pipeline();
             var replaced = new Dictionary<Texture2D, Texture2D>();
             foreach (var kv in targets)
             {
-                var reduced = ResolutionReducer.Resize(kv.Key, kv.Value);
-                ObjectRegistry.RegisterReplacedObject(kv.Key, reduced);
-                replaced[kv.Key] = reduced;
+                var tex = kv.Key;
+                int target = kv.Value;
+
+                bool alphaRequired = false;
+                Material repMat = null; string repProp = null;
+                foreach (var tref in graph.Map[tex])
+                {
+                    if (tref.Material != null && LilTexAlphaUsageAnalyzer.IsAlphaUsed(tref.Material, tref.PropertyName))
+                    {
+                        alphaRequired = true; repMat = tref.Material; repProp = tref.PropertyName; break;
+                    }
+                    if (repMat == null && tref.Material != null) { repMat = tref.Material; repProp = tref.PropertyName; }
+                }
+                var role = TextureTypeClassifier.Classify(repMat, repProp, tex, alphaRequired);
+
+                Transform settingsSource = null;
+                foreach (var tref in graph.Map[tex]) if (tref.RendererContext != null) { settingsSource = tref.RendererContext.transform; break; }
+                var resolvedSettings = SettingsResolver.Resolve(settingsSource ?? root.transform);
+                if (resolvedSettings == null) continue;
+
+                var result = pipeline.Find(tex, target, role, resolvedSettings.Preset);
+                if (result.Final != tex)
+                {
+                    ObjectRegistry.RegisterReplacedObject(tex, result.Final);
+                    replaced[tex] = result.Final;
+                }
             }
 
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
