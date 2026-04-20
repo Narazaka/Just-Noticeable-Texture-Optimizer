@@ -1,0 +1,11 @@
+{
+  "name": "net.narazaka.vrchat.jnto.Tests.Editor",
+  "references": [
+    "net.narazaka.vrchat.jnto.Runtime",
+    "net.narazaka.vrchat.jnto.Editor"
+  ],
+  "includePlatforms": [ "Editor" ],
+  "excludePlatforms": [],
+  "defineConstraints": [ "UNITY_INCLUDE_TESTS" ],
+  "optionalUnityReferences": [ "TestAssemblies" ]
+}

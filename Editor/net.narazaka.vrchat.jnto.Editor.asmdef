@@ -1,0 +1,9 @@
+{
+  "name": "net.narazaka.vrchat.jnto.Editor",
+  "rootNamespace": "Narazaka.VRChat.Jnto.Editor",
+  "references": [
+    "net.narazaka.vrchat.jnto.Runtime"
+  ],
+  "includePlatforms": [ "Editor" ],
+  "excludePlatforms": []
+}
