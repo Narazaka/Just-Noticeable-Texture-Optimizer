@@ -1,7 +1,9 @@
 {
   "name": "net.narazaka.vrchat.jnto.Runtime",
   "rootNamespace": "Narazaka.VRChat.Jnto",
-  "references": [],
+  "references": [
+    "VRC.SDKBase"
+  ],
   "includePlatforms": [],
   "excludePlatforms": []
 }
