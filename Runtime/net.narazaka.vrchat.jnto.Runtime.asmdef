@@ -1,0 +1,7 @@
+{
+  "name": "net.narazaka.vrchat.jnto.Runtime",
+  "rootNamespace": "Narazaka.VRChat.Jnto",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": []
+}
