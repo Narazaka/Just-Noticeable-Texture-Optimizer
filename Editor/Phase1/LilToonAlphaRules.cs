@@ -43,7 +43,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
             if (mat.HasProperty("_TransparentMode"))
             {
                 var m = mat.GetFloat("_TransparentMode");
-                if (m > 0.5f) return true;
+                return m > 0.5f; // lilToonでは _TransparentMode が authoritative
             }
             int q = mat.renderQueue;
             if (q >= 2450 && q < 3000) return true;
