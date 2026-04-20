@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using nadena.dev.ndmf;
 using UnityEngine;
+using Narazaka.VRChat.Jnto.Complexity;
+using Narazaka.VRChat.Jnto.Editor.Complexity;
 using Narazaka.VRChat.Jnto.Editor.Phase1;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
 using Narazaka.VRChat.Jnto.Editor.Resolution;
@@ -38,9 +40,18 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     if (!rendererStats.TryGetValue(tref.RendererContext, out var statsList)) continue;
                     var settings = SettingsResolver.Resolve(tref.RendererContext.transform);
                     if (settings == null) continue;
+                    float complexityFactor = 1f;
+                    var strategy = GetAncestorStrategy(tref.RendererContext.transform);
+                    if (strategy != null)
+                    {
+                        var uvRect = ComputeUvBoundingRect(tref.RendererContext);
+                        var (px, sw, sh) = ComplexitySampler.Sample(tex, uvRect);
+                        float score = strategy.Measure(px, sw, sh);
+                        complexityFactor = Mathf.Lerp(0.5f, 1.0f, score);
+                    }
                     foreach (var s in statsList)
                     {
-                        int t = DensityCalculator.ComputeTargetSize(s, settings.Preset, settings.ViewDistanceCm, 1f);
+                        int t = DensityCalculator.ComputeTargetSize(s, settings.Preset, settings.ViewDistanceCm, complexityFactor);
                         if (t > maxSize) maxSize = t;
                     }
                 }
@@ -100,6 +111,36 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 }
                 if (dirty) r.sharedMaterials = mats;
             }
+        }
+
+        static ComplexityStrategyAsset GetAncestorStrategy(Transform leaf)
+        {
+            for (var t = leaf; t != null; t = t.parent)
+            {
+                var c = t.GetComponent<TextureOptimizer>();
+                if (c != null && c.ComplexityStrategy != null) return c.ComplexityStrategy;
+            }
+            return null;
+        }
+
+        static Rect ComputeUvBoundingRect(Renderer renderer)
+        {
+            Mesh mesh = null;
+            if (renderer is SkinnedMeshRenderer smr) mesh = smr.sharedMesh;
+            else if (renderer is MeshRenderer mr) { var mf = mr.GetComponent<MeshFilter>(); if (mf) mesh = mf.sharedMesh; }
+            if (mesh == null) return new Rect(0, 0, 1, 1);
+            var uv = mesh.uv;
+            if (uv == null || uv.Length == 0) return new Rect(0, 0, 1, 1);
+            float mnx = 1, mny = 1, mxx = 0, mxy = 0;
+            foreach (var u in uv)
+            {
+                mnx = Mathf.Min(mnx, u.x); mny = Mathf.Min(mny, u.y);
+                mxx = Mathf.Max(mxx, u.x); mxy = Mathf.Max(mxy, u.y);
+            }
+            mnx = Mathf.Clamp01(mnx); mny = Mathf.Clamp01(mny);
+            mxx = Mathf.Clamp01(mxx); mxy = Mathf.Clamp01(mxy);
+            if (mxx <= mnx || mxy <= mny) return new Rect(0, 0, 1, 1);
+            return Rect.MinMaxRect(mnx, mny, mxx, mxy);
         }
     }
 }
