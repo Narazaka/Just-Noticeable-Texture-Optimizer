@@ -1,0 +1,17 @@
+{
+  "name": "net.narazaka.vrchat.jnto",
+  "displayName": "Just-Noticeable Texture Optimizer",
+  "version": "0.0.1",
+  "description": "NDMF-based non-destructive texture optimizer for VRChat avatars (lilToon aware).",
+  "unity": "2022.3",
+  "author": {
+    "name": "Narazaka",
+    "url": "https://github.com/Narazaka"
+  },
+  "license": "Zlib",
+  "type": "tool",
+  "url": "https://github.com/Narazaka/jnto.git",
+  "vpmDependencies": {
+    "nadena.dev.ndmf": ">=1.5.0"
+  }
+}
