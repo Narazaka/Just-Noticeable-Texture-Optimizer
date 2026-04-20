@@ -19,7 +19,7 @@ namespace Narazaka.VRChat.Jnto
         [Tooltip("ボーン重み (Root必須、Override空可)")]
         public BoneWeightMapOverride BoneWeights = new BoneWeightMapOverride { HasValue = true, Value = BoneWeightMap.Default() };
 
-        public ScriptableObject ComplexityStrategy;
+        public Complexity.ComplexityStrategyAsset ComplexityStrategy;
 
         public List<Object> ExcludeList = new List<Object>();
     }
