@@ -12,7 +12,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             if (orig == null || cloneMap.ContainsValue(orig)) return;
             if (!cloneMap.TryGetValue(orig, out var clone))
             {
-                clone = new Material(orig);
+                clone = Object.Instantiate(orig);
                 clone.name = orig.name;
                 cloneMap[orig] = clone;
             }
@@ -39,7 +39,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
                     }
                     else if (shouldClone(mats[i]))
                     {
-                        clone = new Material(mats[i]);
+                        clone = Object.Instantiate(mats[i]);
                         clone.name = mats[i].name;
                         cloneMap[mats[i]] = clone;
                         mats[i] = clone;
