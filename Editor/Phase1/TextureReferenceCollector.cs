@@ -54,9 +54,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
                         {
                             var propName = ExtractMaterialProperty(b.propertyName);
                             if (propName != null)
-                            {
                                 g.Add(t, new TextureReference { Material = null, PropertyName = propName, RendererContext = null });
-                            }
                         }
                     }
                 }

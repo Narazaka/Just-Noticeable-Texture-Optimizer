@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using nadena.dev.ndmf;
 using UnityEngine;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase1
 {
@@ -32,28 +33,33 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
                 stripped[src] = rgb;
             }
 
+            if (stripped.Count == 0) return;
+
+            var affectedMaterials = new HashSet<Material>();
+            foreach (var kv in stripped)
+                if (graph.Map.TryGetValue(kv.Key, out var refs))
+                    foreach (var r in refs)
+                        if (r.Material != null) affectedMaterials.Add(r.Material);
+
+            var cloneMap = new Dictionary<Material, Material>();
+            MaterialCloner.ReplaceOnRenderers(root, cloneMap, m => affectedMaterials.Contains(m));
+
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
                 var mats = r.sharedMaterials;
-                bool dirty = false;
                 foreach (var m in mats)
                 {
                     if (m == null || m.shader == null) continue;
-                    var sh = m.shader;
-                    int count = UnityEditor.ShaderUtil.GetPropertyCount(sh);
+                    int count = UnityEditor.ShaderUtil.GetPropertyCount(m.shader);
                     for (int i = 0; i < count; i++)
                     {
-                        if (UnityEditor.ShaderUtil.GetPropertyType(sh, i) != UnityEditor.ShaderUtil.ShaderPropertyType.TexEnv) continue;
-                        var name = UnityEditor.ShaderUtil.GetPropertyName(sh, i);
+                        if (UnityEditor.ShaderUtil.GetPropertyType(m.shader, i) != UnityEditor.ShaderUtil.ShaderPropertyType.TexEnv) continue;
+                        var name = UnityEditor.ShaderUtil.GetPropertyName(m.shader, i);
                         var tex = m.GetTexture(name);
                         if (tex != null && stripped.TryGetValue(tex, out var rgb))
-                        {
                             m.SetTexture(name, rgb);
-                            dirty = true;
-                        }
                     }
                 }
-                if (dirty) r.sharedMaterials = mats;
             }
         }
     }

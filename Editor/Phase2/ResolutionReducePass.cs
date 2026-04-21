@@ -93,11 +93,20 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 }
             }
 
+            if (replaced.Count == 0) return;
+
+            var affectedMaterials = new HashSet<Material>();
+            foreach (var kv in replaced)
+                if (graph.Map.TryGetValue(kv.Key, out var refs))
+                    foreach (var tref in refs)
+                        if (tref.Material != null) affectedMaterials.Add(tref.Material);
+
+            var cloneMap = new Dictionary<Material, Material>();
+            Shared.MaterialCloner.ReplaceOnRenderers(root, cloneMap, m => affectedMaterials.Contains(m));
+
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
-                var mats = r.sharedMaterials;
-                bool dirty = false;
-                foreach (var m in mats)
+                foreach (var m in r.sharedMaterials)
                 {
                     if (m == null || m.shader == null) continue;
                     int count = UnityEditor.ShaderUtil.GetPropertyCount(m.shader);
@@ -106,10 +115,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                         if (UnityEditor.ShaderUtil.GetPropertyType(m.shader, i) != UnityEditor.ShaderUtil.ShaderPropertyType.TexEnv) continue;
                         var name = UnityEditor.ShaderUtil.GetPropertyName(m.shader, i);
                         var t = m.GetTexture(name) as Texture2D;
-                        if (t != null && replaced.TryGetValue(t, out var small)) { m.SetTexture(name, small); dirty = true; }
+                        if (t != null && replaced.TryGetValue(t, out var small)) m.SetTexture(name, small);
                     }
                 }
-                if (dirty) r.sharedMaterials = mats;
             }
         }
 
