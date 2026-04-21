@@ -104,21 +104,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             var cloneMap = new Dictionary<Material, Material>();
             Shared.MaterialCloner.ReplaceOnRenderers(root, cloneMap, m => affectedMaterials.Contains(m));
 
-            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
-            {
-                foreach (var m in r.sharedMaterials)
-                {
-                    if (m == null || m.shader == null) continue;
-                    int count = UnityEditor.ShaderUtil.GetPropertyCount(m.shader);
-                    for (int i = 0; i < count; i++)
-                    {
-                        if (UnityEditor.ShaderUtil.GetPropertyType(m.shader, i) != UnityEditor.ShaderUtil.ShaderPropertyType.TexEnv) continue;
-                        var name = UnityEditor.ShaderUtil.GetPropertyName(m.shader, i);
-                        var t = m.GetTexture(name) as Texture2D;
-                        if (t != null && replaced.TryGetValue(t, out var small)) m.SetTexture(name, small);
-                    }
-                }
-            }
+            Phase1.AlphaStripPass.SafeSetTextures(root, cloneMap, replaced);
         }
 
         static ComplexityStrategyAsset GetAncestorStrategy(Transform leaf)
