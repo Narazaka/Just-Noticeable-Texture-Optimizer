@@ -19,63 +19,64 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         {
             var chain = CompressionChain.For(role);
             int origMax = Mathf.Max(original.width, original.height);
+            var origFmt = original.format;
 
             for (int size = targetSize; size <= origMax; size *= 2)
             {
-                // Identity shortcut: at original size, formats at or above original quality auto-pass
-                bool isOrigSize = (size == origMax);
+                if (size == origMax)
+                {
+                    // 元サイズでは元形式をそのまま採用 (再エンコード不要)
+                    return new Phase2Result { Final = original, Size = origMax, Format = origFmt };
+                }
 
                 var resized = ResolutionReducer.Resize(original, size);
-                Texture2D originalForCompare = null;
+                var originalForCompare = ResolutionReducer.Resize(original, size);
 
+                // DXT5 で検証して通れば DXT1 にも適用可 (圧縮傾向が同じ)
+                // → チェイン内の DXT 系は DXT5 で代表検証
+                bool dxtPassed = false;
                 foreach (var fmt in chain)
                 {
-                    // If same size AND same (or higher quality) format as original → no degradation possible
-                    if (isOrigSize && IsFormatSameOrBetter(fmt, original.format))
+                    var testFmt = fmt;
+                    if (fmt == TextureFormat.DXT1 && dxtPassed)
                     {
-                        var final = new Texture2D(size, size, TextureFormat.RGBA32, true);
-                        final.SetPixels(resized.GetPixels());
-                        final.Apply();
-                        UnityEditor.EditorUtility.CompressTexture(final, fmt, UnityEditor.TextureCompressionQuality.Normal);
+                        // DXT5 で通過済みなら DXT1 も通過とみなす
+                        var final = CreateCompressed(resized, size, fmt);
+                        Object.DestroyImmediate(originalForCompare);
                         Object.DestroyImmediate(resized);
                         return new Phase2Result { Final = final, Size = size, Format = fmt };
                     }
 
-                    // Lazy-create comparison baseline
-                    if (originalForCompare == null)
-                        originalForCompare = ResolutionReducer.Resize(original, size);
-
-                    var decoded = TextureEncodeDecode.EncodeAndDecode(resized, fmt);
+                    var decoded = TextureEncodeDecode.EncodeAndDecode(resized, testFmt);
                     bool pass = _gate.Passes(originalForCompare, decoded, preset, out _);
                     Object.DestroyImmediate(decoded);
 
                     if (pass)
                     {
-                        var final = new Texture2D(size, size, TextureFormat.RGBA32, true);
-                        final.SetPixels(resized.GetPixels());
-                        final.Apply();
-                        UnityEditor.EditorUtility.CompressTexture(final, fmt, UnityEditor.TextureCompressionQuality.Normal);
-                        if (originalForCompare != null) Object.DestroyImmediate(originalForCompare);
+                        // DXT5 通過を記録 (DXT1 チェインが後にある場合に活用)
+                        if (fmt == TextureFormat.DXT5) dxtPassed = true;
+
+                        var final = CreateCompressed(resized, size, fmt);
+                        Object.DestroyImmediate(originalForCompare);
                         Object.DestroyImmediate(resized);
                         return new Phase2Result { Final = final, Size = size, Format = fmt };
                     }
                 }
 
-                if (originalForCompare != null) Object.DestroyImmediate(originalForCompare);
+                Object.DestroyImmediate(originalForCompare);
                 Object.DestroyImmediate(resized);
             }
 
-            return new Phase2Result { Final = original, Size = origMax, Format = original.format, FallbackReason = "all-candidates-rejected" };
+            return new Phase2Result { Final = original, Size = origMax, Format = origFmt, FallbackReason = "all-candidates-rejected" };
         }
 
-        static bool IsFormatSameOrBetter(TextureFormat candidate, TextureFormat original)
+        static Texture2D CreateCompressed(Texture2D source, int size, TextureFormat fmt)
         {
-            if (candidate == original) return true;
-            // BC7 is same-or-better than DXT1/DXT5/BC4/BC5
-            if (candidate == TextureFormat.BC7) return true;
-            // Uncompressed is always same-or-better
-            if (candidate == TextureFormat.RGBA32 || candidate == TextureFormat.RGB24 || candidate == TextureFormat.R8) return true;
-            return false;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
+            tex.SetPixels(source.GetPixels());
+            tex.Apply();
+            UnityEditor.EditorUtility.CompressTexture(tex, fmt, UnityEditor.TextureCompressionQuality.Normal);
+            return tex;
         }
     }
 }

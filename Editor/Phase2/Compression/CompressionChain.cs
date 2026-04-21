@@ -9,17 +9,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             switch (role)
             {
                 case TextureRole.NormalMap:
-                    return new[] { TextureFormat.BC5, TextureFormat.BC7, TextureFormat.RGBA32 };
+                    return new[] { TextureFormat.BC5, TextureFormat.BC7 };
                 case TextureRole.ColorOpaque:
-                    return new[] { TextureFormat.DXT1, TextureFormat.BC7, TextureFormat.RGB24 };
+                    return new[] { TextureFormat.DXT1, TextureFormat.BC7 };
                 case TextureRole.ColorAlpha:
-                    return new[] { TextureFormat.DXT5, TextureFormat.BC7, TextureFormat.RGBA32 };
+                    return new[] { TextureFormat.DXT5, TextureFormat.BC7 };
                 case TextureRole.SingleChannel:
                     return new[] { TextureFormat.BC4, TextureFormat.R8 };
                 case TextureRole.MatCapOrLut:
-                    return new[] { TextureFormat.BC7, TextureFormat.RGBA32 };
+                    return new[] { TextureFormat.BC7 };
                 default:
-                    return new[] { TextureFormat.BC7, TextureFormat.RGBA32 };
+                    return new[] { TextureFormat.BC7 };
             }
         }
     }
