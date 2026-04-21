@@ -21,41 +21,40 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             int origMax = Mathf.Max(original.width, original.height);
             var origFmt = original.format;
 
-            for (int size = targetSize; size <= origMax; size *= 2)
-            {
-                if (size == origMax)
-                {
-                    // 元サイズでは元形式をそのまま採用 (再エンコード不要)
-                    return new Phase2Result { Final = original, Size = origMax, Format = origFmt };
-                }
+            // 高圧縮形式 (DXT系) を全サイズで先に試行、BC7 は後回し
+            var primaryFmts = System.Array.FindAll(chain, f => f != TextureFormat.BC7);
+            var fallbackFmts = System.Array.FindAll(chain, f => f == TextureFormat.BC7);
 
+            // Pass 1: DXT 系を各サイズで試行
+            var result = TrySizes(original, targetSize, origMax, primaryFmts, preset);
+            if (result != null) return result;
+
+            // Pass 2: BC7 を各サイズで試行 (DXT 全滅時のみ)
+            if (fallbackFmts.Length > 0)
+            {
+                result = TrySizes(original, targetSize, origMax, fallbackFmts, preset);
+                if (result != null) return result;
+            }
+
+            // origSize: 元テクスチャをそのまま返す
+            return new Phase2Result { Final = original, Size = origMax, Format = origFmt };
+        }
+
+        Phase2Result TrySizes(Texture2D original, int targetSize, int origMax, TextureFormat[] fmts, QualityPreset preset)
+        {
+            for (int size = targetSize; size < origMax; size *= 2)
+            {
                 var resized = ResolutionReducer.Resize(original, size);
                 var originalForCompare = ResolutionReducer.Resize(original, size);
 
-                // DXT5 で検証して通れば DXT1 にも適用可 (圧縮傾向が同じ)
-                // → チェイン内の DXT 系は DXT5 で代表検証
-                bool dxtPassed = false;
-                foreach (var fmt in chain)
+                foreach (var fmt in fmts)
                 {
-                    var testFmt = fmt;
-                    if (fmt == TextureFormat.DXT1 && dxtPassed)
-                    {
-                        // DXT5 で通過済みなら DXT1 も通過とみなす
-                        var final = CreateCompressed(resized, size, fmt);
-                        Object.DestroyImmediate(originalForCompare);
-                        Object.DestroyImmediate(resized);
-                        return new Phase2Result { Final = final, Size = size, Format = fmt };
-                    }
-
-                    var decoded = TextureEncodeDecode.EncodeAndDecode(resized, testFmt);
+                    var decoded = TextureEncodeDecode.EncodeAndDecode(resized, fmt);
                     bool pass = _gate.Passes(originalForCompare, decoded, preset, out _);
                     Object.DestroyImmediate(decoded);
 
                     if (pass)
                     {
-                        // DXT5 通過を記録 (DXT1 チェインが後にある場合に活用)
-                        if (fmt == TextureFormat.DXT5) dxtPassed = true;
-
                         var final = CreateCompressed(resized, size, fmt);
                         Object.DestroyImmediate(originalForCompare);
                         Object.DestroyImmediate(resized);
@@ -66,8 +65,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 Object.DestroyImmediate(originalForCompare);
                 Object.DestroyImmediate(resized);
             }
-
-            return new Phase2Result { Final = original, Size = origMax, Format = origFmt, FallbackReason = "all-candidates-rejected" };
+            return null;
         }
 
         static Texture2D CreateCompressed(Texture2D source, int size, TextureFormat fmt)
