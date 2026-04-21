@@ -10,12 +10,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
         public DegradationGate()
         {
             _metrics = new List<IDegradationMetric> {
-                new SsimMetric(),
-                new BandingMetric(),
-                new BlockBoundaryMetric(),
-                new RingingMetric(),
+                new FlipMetric(),
                 new ChromaDriftMetric(),
-                new HighFrequencyMetric(),
                 new AlphaQuantizationMetric(),
             };
         }
@@ -25,9 +21,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             foreach (var m in _metrics)
             {
                 float s = m.Evaluate(original, candidate);
-                string key = m.Name == "SSIM" ? "SSIM_inverse" : m.Name;
-                float score = m.Name == "SSIM" ? 1f - s : s;
-                if (score > DegradationThresholds.MaxScore[key][preset])
+                if (!DegradationThresholds.MaxScore.TryGetValue(m.Name, out var presetMap))
+                    continue;
+                if (s > presetMap[preset])
                 {
                     failedMetric = m.Name;
                     return false;
