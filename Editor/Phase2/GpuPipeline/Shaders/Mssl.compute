@@ -1,0 +1,89 @@
+#pragma kernel CSEvaluate
+
+Texture2D<float4> _Orig;
+SamplerState sampler_Orig;
+Texture2D<float4> _Candidate;
+SamplerState sampler_Candidate;
+
+RWStructuredBuffer<float> _Scores;
+StructuredBuffer<float> _RPerTile;
+
+int _TilesX;
+int _TilesY;
+int _TileSize;
+int _TextureWidth;
+int _TextureHeight;
+float _BandScale;
+float _StructureScale;
+
+float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+[numthreads(8, 8, 1)]
+void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
+{
+    int tx = (int)gid.x;
+    int ty = (int)gid.y;
+    if (tx >= _TilesX || ty >= _TilesY) return;
+    if (gtid.x != 0 || gtid.y != 0) return;  // 1 thread per tile
+
+    int tileIdx = ty * _TilesX + tx;
+    float r = _RPerTile[tileIdx];
+    if (r <= 0.0)
+    {
+        _Scores[tileIdx] = 0.0;
+        return;
+    }
+
+    float ratio = (float)_TileSize / max(r, 1e-3);
+    int targetLv = (int)floor(log2(ratio));
+
+    float2 tileUvMin = float2(tx, ty) / float2(_TilesX, _TilesY);
+    float2 tileUvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
+
+    float worst = 0.0;
+    for (int dl = -1; dl <= 1; dl++)
+    {
+        int lv = clamp(targetLv + dl, 0, 10);
+        float lvNext = (float)(lv + 1);
+        float scaleWeight = 1.0 - abs((float)dl) * 0.3;
+
+        const int SamplesPerSide = 4;
+        float eO = 0.0;
+        float dDiff = 0.0;
+        float sumStruct = 0.0;
+        int count = 0;
+
+        for (int sy = 0; sy < SamplesPerSide; sy++)
+        for (int sx = 0; sx < SamplesPerSide; sx++)
+        {
+            float2 local = (float2(sx, sy) + 0.5) / (float)SamplesPerSide;
+            float2 uv = lerp(tileUvMin, tileUvMax, local);
+
+            float4 oLv = _Orig.SampleLevel(sampler_Orig, uv, (float)lv);
+            float4 cLv = _Candidate.SampleLevel(sampler_Candidate, uv, (float)lv);
+            float4 oLvN = _Orig.SampleLevel(sampler_Orig, uv, lvNext);
+            float4 cLvN = _Candidate.SampleLevel(sampler_Candidate, uv, lvNext);
+
+            float laplO = lum(oLv.rgb) - lum(oLvN.rgb);
+            float laplC = lum(cLv.rgb) - lum(cLvN.rgb);
+            eO += laplO * laplO;
+            float dd = laplO - laplC;
+            dDiff += dd * dd;
+
+            float lO = lum(oLv.rgb);
+            float lC = lum(cLv.rgb);
+            sumStruct += abs(lO - lC);
+            count++;
+        }
+
+        float band = eO > 1e-6 ? saturate(dDiff / eO) : 0.0;
+        float structAvg = count > 0 ? sumStruct / (float)count : 0.0;
+
+        float sBand = band * _BandScale * scaleWeight;
+        float sStruct = structAvg * _StructureScale * scaleWeight;
+        float s = max(sBand, sStruct);
+        worst = max(worst, s);
+    }
+
+    _Scores[tileIdx] = worst;
+}
