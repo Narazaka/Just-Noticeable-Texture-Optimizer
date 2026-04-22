@@ -20,10 +20,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             if (po.Length != pc.Length || w < 3 || h < 3) return 0f;
 
             var blurO = GaussianBlur3x3(po, w, h);
-            var blurC = GaussianBlur3x3(pc, w, h);
 
             double origEnergy = 0, diffEnergy = 0;
-            int interior = (w - 2) * (h - 2);
 
             for (int y = 1; y < h - 1; y++)
             {
@@ -31,7 +29,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
                 {
                     int idx = y * w + x;
                     float loR = Lum(po[idx]) - blurO[idx];
-                    float lcR = Lum(pc[idx]) - blurC[idx];
+                    float lcR = Lum(pc[idx]) - blurO[idx];
 
                     origEnergy += loR * loR;
                     float d = loR - lcR;
