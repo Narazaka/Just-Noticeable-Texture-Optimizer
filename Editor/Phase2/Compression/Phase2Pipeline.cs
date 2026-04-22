@@ -60,7 +60,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 
                     if (pass)
                     {
-                        var final = CreateCompressed(reference, fmt);
+                        var final = CreateCompressed(reference, fmt, original.name);
                         Object.DestroyImmediate(reference);
                         _gate.Cleanup();
                         return new Phase2Result { Final = final, Size = size, Format = fmt };
@@ -72,13 +72,26 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             return null;
         }
 
-        static Texture2D CreateCompressed(Texture2D source, TextureFormat fmt)
+        static Texture2D CreateCompressed(Texture2D source, TextureFormat fmt, string originalName)
         {
             var tex = new Texture2D(source.width, source.height, TextureFormat.RGBA32, true);
+            tex.name = $"{originalName}_{source.width}x{source.height}_{fmt}";
             tex.SetPixels(source.GetPixels());
             tex.Apply();
             UnityEditor.EditorUtility.CompressTexture(tex, fmt, UnityEditor.TextureCompressionQuality.Normal);
+            SetStreamingMipmaps(tex, true);
             return tex;
+        }
+
+        static void SetStreamingMipmaps(Texture2D tex, bool enabled)
+        {
+            var so = new UnityEditor.SerializedObject(tex);
+            var prop = so.FindProperty("m_StreamingMipmaps");
+            if (prop != null)
+            {
+                prop.boolValue = enabled;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
         }
     }
 }
