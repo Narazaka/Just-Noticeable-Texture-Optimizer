@@ -5,22 +5,32 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Degradation;
 public class SsimMetricTests
 {
     [Test]
-    public void Identical_ReturnsOne()
+    public void Identical_ReturnsZero()
     {
         var t = MakeGradient(64);
         var m = new SsimMetric();
-        Assert.AreEqual(1f, m.Evaluate(t, t), 0.001f);
+        Assert.AreEqual(0f, m.Evaluate(t, t), 0.01f);
     }
 
     [Test]
-    public void BlurredImage_SsimLessThanOne()
+    public void Blurred_ReturnsPositiveDegradation()
     {
         var a = MakeCheckerboard(64);
         var b = Blur(a);
         var m = new SsimMetric();
         float s = m.Evaluate(a, b);
-        Assert.Less(s, 0.999f);
-        Assert.Greater(s, 0.0f);
+        Assert.Greater(s, 0.001f, "Blurred image should show degradation");
+        Assert.Less(s, 1f);
+    }
+
+    [Test]
+    public void Inverted_ReturnsHighDegradation()
+    {
+        var a = MakeGradient(64);
+        var b = Invert(a);
+        var m = new SsimMetric();
+        float s = m.Evaluate(a, b);
+        Assert.Greater(s, 0.3f, "Inverted image should show high degradation");
     }
 
     static Texture2D MakeGradient(int n)
@@ -28,7 +38,7 @@ public class SsimMetricTests
         var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
         var px = new Color[n * n];
         for (int y = 0; y < n; y++) for (int x = 0; x < n; x++)
-            px[y*n+x] = new Color(x/(float)n, y/(float)n, 0.5f, 1f);
+            px[y * n + x] = new Color(x / (float)n, y / (float)n, 0.5f, 1f);
         t.SetPixels(px); t.Apply(); return t;
     }
 
@@ -37,7 +47,7 @@ public class SsimMetricTests
         var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
         var px = new Color[n * n];
         for (int y = 0; y < n; y++) for (int x = 0; x < n; x++)
-            px[y*n+x] = (((x >> 1) + (y >> 1)) & 1) == 0 ? Color.black : Color.white;
+            px[y * n + x] = (((x >> 1) + (y >> 1)) & 1) == 0 ? Color.black : Color.white;
         t.SetPixels(px); t.Apply(); return t;
     }
 
@@ -58,7 +68,15 @@ public class SsimMetricTests
             q[y * w + x] = sum / n;
         }
         var dst = new Texture2D(w, h, TextureFormat.RGBA32, false);
-        dst.SetPixels(q); dst.Apply();
-        return dst;
+        dst.SetPixels(q); dst.Apply(); return dst;
+    }
+
+    static Texture2D Invert(Texture2D src)
+    {
+        var px = src.GetPixels();
+        for (int i = 0; i < px.Length; i++)
+            px[i] = new Color(1f - px[i].r, 1f - px[i].g, 1f - px[i].b, 1f);
+        var t = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+        t.SetPixels(px); t.Apply(); return t;
     }
 }
