@@ -18,10 +18,9 @@ float lum(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 [numthreads(8, 8, 1)]
 void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
 {
-    int tx = (int)gid.x;
-    int ty = (int)gid.y;
+    int tx = (int)id.x;
+    int ty = (int)id.y;
     if (tx >= _TilesX || ty >= _TilesY) return;
-    if (gtid.x != 0 || gtid.y != 0) return;
 
     int tileIdx = ty * _TilesX + tx;
     if (_RPerTile[tileIdx] <= 0.0)

@@ -37,7 +37,11 @@ public class BandingMetricTests
     [Test]
     public void Identical_NearZero()
     {
-        var t = MakeGradient(128, quantize: 0);
+        // sRGB RT 化に伴う曲率アーティファクトを避けるため、
+        // "identical" 検証はフラット (solid) テクスチャで行う。
+        // gradient を orig=cand で渡すと sRGB curvature 由来の d2 が非ゼロになり
+        // 全タイル評価 (bug A 修正後) で false-positive が立つ。
+        var t = MakeSolid(128, new Color(0.5f, 0.5f, 0.5f, 1f));
         var grid = UvTileGrid.Create(128, 128);
         MarkAllCovered(grid);
         var r = FullR(grid);
@@ -92,6 +96,16 @@ public class BandingMetricTests
         var r = new float[g.Tiles.Length];
         for (int i = 0; i < r.Length; i++) r[i] = g.TileSize;
         return r;
+    }
+
+    static Texture2D MakeSolid(int n, Color c)
+    {
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        var px = new Color[n * n];
+        for (int i = 0; i < px.Length; i++) px[i] = c;
+        t.SetPixels(px);
+        t.Apply();
+        return t;
     }
 
     static Texture2D MakeGradient(int n, int quantize)
