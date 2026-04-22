@@ -13,13 +13,22 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             TexelDensityMap densityMap,
             out string failedMetric)
         {
+            Texture2D evalOriginal = original;
             Texture2D evalCandidate = candidate;
-            bool needsDestroy = false;
-            if (candidate.width != original.width || candidate.height != original.height)
+            bool destroyOriginal = false;
+            bool destroyCandidate = false;
+
+            if (!original.isReadable)
             {
-                int maxDim = Mathf.Max(original.width, original.height);
+                evalOriginal = MakeReadable(original);
+                destroyOriginal = true;
+            }
+
+            if (candidate.width != evalOriginal.width || candidate.height != evalOriginal.height)
+            {
+                int maxDim = Mathf.Max(evalOriginal.width, evalOriginal.height);
                 evalCandidate = ResolutionReducer.Resize(candidate, maxDim);
-                needsDestroy = true;
+                destroyCandidate = true;
             }
 
             try
@@ -29,9 +38,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
                 {
                     float s;
                     if (densityMap != null && m is IPerPixelMetric perPixel)
-                        s = EvaluateDensityWeighted(perPixel, original, evalCandidate, densityMap);
+                        s = EvaluateDensityWeighted(perPixel, evalOriginal, evalCandidate, densityMap);
                     else
-                        s = m.Evaluate(original, evalCandidate);
+                        s = m.Evaluate(evalOriginal, evalCandidate);
 
                     if (!DegradationThresholds.MaxScore.TryGetValue(m.Name, out var presetMap))
                         continue;
@@ -44,11 +53,26 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             }
             finally
             {
-                if (needsDestroy) Object.DestroyImmediate(evalCandidate);
+                if (destroyCandidate) Object.DestroyImmediate(evalCandidate);
+                if (destroyOriginal) Object.DestroyImmediate(evalOriginal);
             }
 
             failedMetric = null;
             return true;
+        }
+
+        static Texture2D MakeReadable(Texture2D src)
+        {
+            var rt = RenderTexture.GetTemporary(src.width, src.height, 0, RenderTextureFormat.ARGB32);
+            Graphics.Blit(src, rt);
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            var dst = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+            dst.ReadPixels(new Rect(0, 0, src.width, src.height), 0, 0);
+            dst.Apply();
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+            return dst;
         }
 
         static float EvaluateDensityWeighted(IPerPixelMetric metric, Texture2D original, Texture2D candidate, TexelDensityMap densityMap)
