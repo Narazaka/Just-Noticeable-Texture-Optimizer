@@ -19,7 +19,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         public Phase2Result Find(Texture2D original, int targetSize, TextureRole role,
             QualityPreset preset, TexelDensityMap densityMap)
         {
-            var chain = CompressionChain.For(role);
+            var chain = CompressionChain.For(role, original.format);
             int origMax = Mathf.Max(original.width, original.height);
             var origFmt = original.format;
 

@@ -18,7 +18,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
             foreach (var kv in graph.Map)
             {
                 if (!(kv.Key is Texture2D src)) continue;
-                if (src.format == TextureFormat.RGB24 || src.format == TextureFormat.RGB565) continue;
+                if (IsAlphaFreeFormat(src.format)) continue;
 
                 bool anyAlpha = false;
                 foreach (var r in kv.Value)
@@ -45,6 +45,29 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
             MaterialCloner.ReplaceOnRenderers(root, cloneMap, m => affectedMaterials.Contains(m));
 
             SafeSetTextures(root, cloneMap, stripped);
+        }
+
+        static bool IsAlphaFreeFormat(TextureFormat fmt)
+        {
+            switch (fmt)
+            {
+                case TextureFormat.RGB24:
+                case TextureFormat.RGB565:
+                case TextureFormat.DXT1:
+                case TextureFormat.DXT1Crunched:
+                case TextureFormat.BC4:
+                case TextureFormat.BC5:
+                case TextureFormat.R8:
+                case TextureFormat.R16:
+                case TextureFormat.RG16:
+                case TextureFormat.RFloat:
+                case TextureFormat.RGFloat:
+                case TextureFormat.RHalf:
+                case TextureFormat.RGHalf:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         internal static void SafeSetTextures<T>(GameObject root, Dictionary<Material, Material> cloneMap, Dictionary<T, Texture2D> replacements) where T : Texture
