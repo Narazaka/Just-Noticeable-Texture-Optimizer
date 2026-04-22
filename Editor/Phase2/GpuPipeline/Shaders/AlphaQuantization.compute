@@ -1,0 +1,82 @@
+#pragma kernel CSEvaluate
+
+Texture2D<float4> _Orig;
+SamplerState sampler_Orig;
+Texture2D<float4> _Candidate;
+SamplerState sampler_Candidate;
+
+RWStructuredBuffer<float> _Scores;
+StructuredBuffer<float> _RPerTile;
+
+int _TilesX;
+int _TilesY;
+int _TileSize;
+int _TextureWidth;
+int _TextureHeight;
+float _AlphaQuantScale;
+
+[numthreads(8, 8, 1)]
+void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
+{
+    int tx = (int)gid.x;
+    int ty = (int)gid.y;
+    if (tx >= _TilesX || ty >= _TilesY) return;
+    if (gtid.x != 0 || gtid.y != 0) return;
+
+    int tileIdx = ty * _TilesX + tx;
+    if (_RPerTile[tileIdx] <= 0.0)
+    {
+        _Scores[tileIdx] = 0.0;
+        return;
+    }
+
+    float2 uvMin = float2(tx, ty) / float2(_TilesX, _TilesY);
+    float2 uvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
+
+    const int N = 16;
+    float aMin = 1.0, aMax = 0.0;
+    float sse = 0.0;
+    int sampleCount = 0;
+
+    // CPU 参照と同じく 256-level のユニーク数を測るが、
+    // RWStructuredBuffer を避けるため uint8 の集合を 8 つの uint(32bit) で表現して bitmask 管理する。
+    uint levelMask[8];
+    [unroll] for (int b = 0; b < 8; b++) levelMask[b] = 0;
+
+    for (int sy = 0; sy < N; sy++)
+    for (int sx = 0; sx < N; sx++)
+    {
+        float2 local = (float2(sx, sy) + 0.5) / (float)N;
+        float2 uv = lerp(uvMin, uvMax, local);
+        float aO = _Orig.SampleLevel(sampler_Orig, uv, 0).a;
+        float aC = _Candidate.SampleLevel(sampler_Candidate, uv, 0).a;
+
+        aMin = min(aMin, aO);
+        aMax = max(aMax, aO);
+
+        float d = aO - aC;
+        sse += d * d;
+
+        int level = clamp((int)round(aC * 255.0), 0, 255);
+        int word = level >> 5;         // level / 32
+        int bit = level & 31;          // level % 32
+        levelMask[word] |= (1u << (uint)bit);
+        sampleCount++;
+    }
+
+    if (aMax - aMin < 0.02 || sampleCount == 0)
+    {
+        _Scores[tileIdx] = 0.0;
+        return;
+    }
+
+    int levelCount = 0;
+    [unroll] for (int i = 0; i < 8; i++) levelCount += (int)countbits(levelMask[i]);
+
+    float rmse = sqrt(sse / (float)sampleCount);
+    float rmseScore = saturate(rmse * 20.0);
+    float levelScore = saturate((8.0 - (float)levelCount) / 8.0);
+    float score = max(rmseScore, levelScore);
+
+    _Scores[tileIdx] = score * _AlphaQuantScale;
+}
