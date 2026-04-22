@@ -1,0 +1,116 @@
+using NUnit.Framework;
+using UnityEngine;
+using Narazaka.VRChat.Jnto;
+using Narazaka.VRChat.Jnto.Editor.Phase2;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
+using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
+using Narazaka.VRChat.Jnto.Editor.Resolution;
+
+public class NewPhase2PipelineTests
+{
+    [Test]
+    public void Find_WithCheckerboard_ReturnsValidResult()
+    {
+        var t = MakeCheckerboard(256);
+        try
+        {
+            var grid = UvTileGrid.Create(256, 256);
+            for (int i = 0; i < grid.Tiles.Length; i++)
+                grid.Tiles[i] = new TileStats { HasCoverage = true, Density = 100f, BoneWeight = 1f };
+            var r = new float[grid.Tiles.Length];
+            for (int i = 0; i < r.Length; i++) r[i] = grid.TileSize;
+
+            var calib = DegradationCalibration.Default();
+            var settings = new ResolvedSettings
+            {
+                Preset = QualityPreset.Medium,
+                EncodePolicy = EncodePolicy.Safe,
+                CacheMode = CacheMode.Full,
+            };
+
+            using (var ctx = GpuTextureContext.FromTexture2D(t))
+            {
+                var stats = BlockStatsComputer.Compute(ctx.Original, 256, 256);
+                var pipeline = new NewPhase2Pipeline(calib, TextureRole.ColorOpaque);
+                var result = pipeline.Find(t, ctx, grid, r,
+                    TextureRole.ColorOpaque, settings, stats);
+
+                Assert.IsNotNull(result);
+                Assert.IsNotNull(result.Final);
+                Assert.GreaterOrEqual(result.Size, DensityCalculator.MinSize);
+                Assert.LessOrEqual(result.Size, 256);
+                Assert.IsTrue(result.ProcessingMs > 0f);
+                Assert.IsNotNull(result.DecisionReason);
+
+                Object.DestroyImmediate(result.Final);
+            }
+            Object.DestroyImmediate(calib);
+        }
+        finally
+        {
+            Object.DestroyImmediate(t);
+        }
+    }
+
+    [Test]
+    public void Find_FastMode_SkipsVerifyForHighConfidence()
+    {
+        // 全 flat color → DXT1 高 confidence → Fast モードで verify スキップ
+        var t = MakeSolid(128, Color.gray);
+        try
+        {
+            var grid = UvTileGrid.Create(128, 128);
+            for (int i = 0; i < grid.Tiles.Length; i++)
+                grid.Tiles[i] = new TileStats { HasCoverage = true, Density = 100f, BoneWeight = 1f };
+            var r = new float[grid.Tiles.Length];
+            for (int i = 0; i < r.Length; i++) r[i] = grid.TileSize;
+
+            var calib = DegradationCalibration.Default();
+            var settings = new ResolvedSettings
+            {
+                Preset = QualityPreset.Medium,
+                EncodePolicy = EncodePolicy.Fast,
+                CacheMode = CacheMode.Full,
+            };
+
+            using (var ctx = GpuTextureContext.FromTexture2D(t))
+            {
+                var stats = BlockStatsComputer.Compute(ctx.Original, 128, 128);
+                var pipeline = new NewPhase2Pipeline(calib, TextureRole.ColorOpaque);
+                var result = pipeline.Find(t, ctx, grid, r,
+                    TextureRole.ColorOpaque, settings, stats);
+
+                Assert.IsNotNull(result);
+                StringAssert.Contains("Fast-mode skip verify", result.DecisionReason);
+                Object.DestroyImmediate(result.Final);
+            }
+            Object.DestroyImmediate(calib);
+        }
+        finally
+        {
+            Object.DestroyImmediate(t);
+        }
+    }
+
+    static Texture2D MakeCheckerboard(int n)
+    {
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        var px = new Color[n * n];
+        for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++)
+            px[y * n + x] = (((x >> 1) + (y >> 1)) & 1) == 0 ? Color.black : Color.white;
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+
+    static Texture2D MakeSolid(int n, Color c)
+    {
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        var px = new Color[n * n];
+        for (int i = 0; i < px.Length; i++) px[i] = c;
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+}
