@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using nadena.dev.ndmf;
 using UnityEngine;
+using UnityEngine.Profiling;
 using Narazaka.VRChat.Jnto;
 using Narazaka.VRChat.Jnto.Editor.Phase1;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Cache;
@@ -21,34 +22,42 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
     {
         protected override void Execute(BuildContext ctx)
         {
-            Reporting.DecisionLog.Clear();
-            var root = ctx.AvatarRootObject;
-            if (root.GetComponentInChildren<TextureOptimizer>(true) == null) return;
-
-            var animator = root.GetComponent<Animator>();
-            var bonemap = BoneClassifier.ClassifyHumanoid(animator);
-            var graph = TextureReferenceCollector.Collect(root);
-
-            var rendererSettings = new Dictionary<Renderer, ResolvedSettings>();
-            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            Profiler.BeginSample("JNTO.Execute");
+            try
             {
-                var s = SettingsResolver.Resolve(r.transform);
-                if (s == null) continue;
-                rendererSettings[r] = s;
-            }
+                Reporting.DecisionLog.Clear();
+                var root = ctx.AvatarRootObject;
+                if (root.GetComponentInChildren<TextureOptimizer>(true) == null) return;
 
-            using (var cache = new InMemoryCache())
-            {
-                var replaced = new Dictionary<Texture2D, Texture2D>();
-                foreach (var kv in graph.Map)
+                var animator = root.GetComponent<Animator>();
+                var bonemap = BoneClassifier.ClassifyHumanoid(animator);
+                var graph = TextureReferenceCollector.Collect(root);
+
+                var rendererSettings = new Dictionary<Renderer, ResolvedSettings>();
+                foreach (var r in root.GetComponentsInChildren<Renderer>(true))
                 {
-                    if (!(kv.Key is Texture2D tex)) continue;
-                    ProcessTexture(tex, kv.Value, rendererSettings, bonemap, cache, replaced);
+                    var s = SettingsResolver.Resolve(r.transform);
+                    if (s == null) continue;
+                    rendererSettings[r] = s;
                 }
-                ApplyReplacements(root, graph, replaced);
-            }
 
-            Reporting.JntoNdmfReport.Emit();
+                using (var cache = new InMemoryCache())
+                {
+                    var replaced = new Dictionary<Texture2D, Texture2D>();
+                    foreach (var kv in graph.Map)
+                    {
+                        if (!(kv.Key is Texture2D tex)) continue;
+                        ProcessTexture(tex, kv.Value, rendererSettings, bonemap, cache, replaced);
+                    }
+                    ApplyReplacements(root, graph, replaced);
+                }
+
+                Reporting.JntoNdmfReport.Emit();
+            }
+            finally
+            {
+                Profiler.EndSample();
+            }
         }
 
         void ProcessTexture(
@@ -58,127 +67,160 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             InMemoryCache cache,
             Dictionary<Texture2D, Texture2D> replaced)
         {
-            ResolvedSettings settings = null;
-            foreach (var r in refs)
+            UnityEngine.Profiling.Profiler.BeginSample("JNTO.ProcessTexture." + (tex != null ? tex.name : "?"));
+            try
             {
-                if (r.RendererContext == null) continue;
-                if (rendererSettings.TryGetValue(r.RendererContext, out settings)) break;
-            }
-            if (settings == null) return;
-
-            bool alphaRequired = false;
-            Material repMat = null; string repProp = null;
-            foreach (var r in refs)
-            {
-                if (r.Material != null && LilTexAlphaUsageAnalyzer.IsAlphaUsed(r.Material, r.PropertyName))
+                ResolvedSettings settings = null;
+                foreach (var r in refs)
                 {
-                    alphaRequired = true;
-                    repMat = r.Material;
-                    repProp = r.PropertyName;
-                    break;
+                    if (r.RendererContext == null) continue;
+                    if (rendererSettings.TryGetValue(r.RendererContext, out settings)) break;
                 }
-                if (repMat == null && r.Material != null)
-                {
-                    repMat = r.Material;
-                    repProp = r.PropertyName;
-                }
-            }
-            var role = TextureTypeClassifier.Classify(repMat, repProp, tex, alphaRequired);
-            var calib = settings.Calibration as DegradationCalibration ?? DegradationCalibration.Default();
+                if (settings == null) return;
 
-            // Persistent cache lookup
-            var cacheKey = CacheKeyBuilder.Build(tex, role, refs, settings);
-            var cached = PersistentCache.TryLoad(cacheKey, settings.CacheMode);
-            if (cached != null && cached.CompressedRawBytes != null && cached.CompressedRawBytes.Length > 0)
-            {
-                var restored = RestoreFromRaw(tex, cached);
-                if (restored != null)
+                bool alphaRequired = false;
+                Material repMat = null; string repProp = null;
+                foreach (var r in refs)
                 {
-                    ObjectRegistry.RegisterReplacedObject(tex, restored);
-                    replaced[tex] = restored;
-                    if (System.Enum.TryParse<TextureFormat>(cached.FinalFormatName, out var cfmt))
+                    if (r.Material != null && LilTexAlphaUsageAnalyzer.IsAlphaUsed(r.Material, r.PropertyName))
                     {
-                        Reporting.DecisionLog.Add(new Reporting.DecisionRecord
-                        {
-                            OriginalTexture = tex,
-                            OrigSize = Mathf.Max(tex.width, tex.height),
-                            FinalSize = cached.FinalSize,
-                            OrigFormat = tex.format,
-                            FinalFormat = cfmt,
-                            SavedBytes = EstimateSavedBytesRaw(tex, cached.FinalSize, cfmt),
-                            TextureScore = 0f,
-                            DominantMetric = "-",
-                            DominantMipLevel = -1,
-                            WorstTileIndex = -1,
-                            CacheHit = true,
-                            ProcessingMs = 0f,
-                            Reason = "cache hit",
-                        });
+                        alphaRequired = true;
+                        repMat = r.Material;
+                        repProp = r.PropertyName;
+                        break;
                     }
-                    return;
+                    if (repMat == null && r.Material != null)
+                    {
+                        repMat = r.Material;
+                        repProp = r.PropertyName;
+                    }
+                }
+                var role = TextureTypeClassifier.Classify(repMat, repProp, tex, alphaRequired);
+                var calib = settings.Calibration as DegradationCalibration ?? DegradationCalibration.Default();
+
+                // Persistent cache lookup
+                var cacheKey = CacheKeyBuilder.Build(tex, role, refs, settings);
+                var cached = PersistentCache.TryLoad(cacheKey, settings.CacheMode);
+                if (cached != null && cached.CompressedRawBytes != null && cached.CompressedRawBytes.Length > 0)
+                {
+                    var restored = RestoreFromRaw(tex, cached);
+                    if (restored != null)
+                    {
+                        ObjectRegistry.RegisterReplacedObject(tex, restored);
+                        replaced[tex] = restored;
+                        if (System.Enum.TryParse<TextureFormat>(cached.FinalFormatName, out var cfmt))
+                        {
+                            Reporting.DecisionLog.Add(new Reporting.DecisionRecord
+                            {
+                                OriginalTexture = tex,
+                                OrigSize = Mathf.Max(tex.width, tex.height),
+                                FinalSize = cached.FinalSize,
+                                OrigFormat = tex.format,
+                                FinalFormat = cfmt,
+                                SavedBytes = EstimateSavedBytesRaw(tex, cached.FinalSize, cfmt),
+                                TextureScore = 0f,
+                                DominantMetric = "-",
+                                DominantMipLevel = -1,
+                                WorstTileIndex = -1,
+                                CacheHit = true,
+                                ProcessingMs = 0f,
+                                Reason = "cache hit",
+                            });
+                        }
+                        return;
+                    }
+                }
+
+                // Tile grid + r(T)
+                var sources = new List<(Renderer renderer, Mesh mesh)>();
+                foreach (var r in refs)
+                {
+                    if (r.RendererContext == null) continue;
+                    Mesh m = GetMesh(r.RendererContext);
+                    if (m != null) sources.Add((r.RendererContext, m));
+                }
+                var grid = TileGridBuilder.Build(tex.width, tex.height, sources, bonemap, rendererSettings);
+                var rPerTile = new float[grid.Tiles.Length];
+                for (int i = 0; i < grid.Tiles.Length; i++)
+                {
+                    rPerTile[i] = EffectiveResolutionCalculator.ComputeR(
+                        grid.Tiles[i], grid.TileSize, settings.ViewDistanceCm,
+                        settings.HMDPixelsPerDegree, settings.Preset);
+                }
+
+                // GPU context + block stats (cached per build)
+                if (!cache.Contexts.TryGetValue(tex, out var gpuCtx))
+                {
+                    gpuCtx = GpuTextureContext.FromTexture2D(tex);
+                    cache.Contexts[tex] = gpuCtx;
+                }
+                if (!cache.BlockStats.TryGetValue(tex, out var stats))
+                {
+                    Profiler.BeginSample("JNTO.BlockStats");
+                    try
+                    {
+                        stats = BlockStatsComputer.Compute(gpuCtx.Original, tex.width, tex.height);
+                    }
+                    finally
+                    {
+                        Profiler.EndSample();
+                    }
+                    cache.BlockStats[tex] = stats;
+                }
+
+                var pipeline = new NewPhase2Pipeline(calib, role);
+                NewPhase2Result result;
+                Profiler.BeginSample("JNTO.PipelineFind");
+                try
+                {
+                    result = pipeline.Find(tex, gpuCtx, grid, rPerTile, role, settings, stats);
+                }
+                finally
+                {
+                    Profiler.EndSample();
+                }
+
+                if (result.Final != tex)
+                {
+                    ObjectRegistry.RegisterReplacedObject(tex, result.Final);
+                    replaced[tex] = result.Final;
+
+                    Profiler.BeginSample("JNTO.CacheStore");
+                    try
+                    {
+                        PersistentCache.Store(cacheKey, new CachedTextureResult
+                        {
+                            FinalSize = result.Size,
+                            FinalFormatName = result.Format.ToString(),
+                            CompressedRawBytes = result.Final.GetRawTextureData(),
+                        }, settings.CacheMode);
+                    }
+                    finally
+                    {
+                        Profiler.EndSample();
+                    }
+
+                    Reporting.DecisionLog.Add(new Reporting.DecisionRecord
+                    {
+                        OriginalTexture = tex,
+                        OrigSize = Mathf.Max(tex.width, tex.height),
+                        FinalSize = result.Size,
+                        OrigFormat = tex.format,
+                        FinalFormat = result.Format,
+                        SavedBytes = EstimateSavedBytes(tex, result),
+                        TextureScore = result.FinalVerdict.TextureScore,
+                        DominantMetric = result.FinalVerdict.DominantMetric ?? "-",
+                        DominantMipLevel = result.FinalVerdict.DominantMipLevel,
+                        WorstTileIndex = result.FinalVerdict.WorstTileIndex,
+                        CacheHit = false,
+                        ProcessingMs = result.ProcessingMs,
+                        Reason = result.DecisionReason,
+                    });
                 }
             }
-
-            // Tile grid + r(T)
-            var sources = new List<(Renderer renderer, Mesh mesh)>();
-            foreach (var r in refs)
+            finally
             {
-                if (r.RendererContext == null) continue;
-                Mesh m = GetMesh(r.RendererContext);
-                if (m != null) sources.Add((r.RendererContext, m));
-            }
-            var grid = TileGridBuilder.Build(tex.width, tex.height, sources, bonemap, rendererSettings);
-            var rPerTile = new float[grid.Tiles.Length];
-            for (int i = 0; i < grid.Tiles.Length; i++)
-            {
-                rPerTile[i] = EffectiveResolutionCalculator.ComputeR(
-                    grid.Tiles[i], grid.TileSize, settings.ViewDistanceCm,
-                    settings.HMDPixelsPerDegree, settings.Preset);
-            }
-
-            // GPU context + block stats (cached per build)
-            if (!cache.Contexts.TryGetValue(tex, out var gpuCtx))
-            {
-                gpuCtx = GpuTextureContext.FromTexture2D(tex);
-                cache.Contexts[tex] = gpuCtx;
-            }
-            if (!cache.BlockStats.TryGetValue(tex, out var stats))
-            {
-                stats = BlockStatsComputer.Compute(gpuCtx.Original, tex.width, tex.height);
-                cache.BlockStats[tex] = stats;
-            }
-
-            var pipeline = new NewPhase2Pipeline(calib, role);
-            var result = pipeline.Find(tex, gpuCtx, grid, rPerTile, role, settings, stats);
-
-            if (result.Final != tex)
-            {
-                ObjectRegistry.RegisterReplacedObject(tex, result.Final);
-                replaced[tex] = result.Final;
-
-                PersistentCache.Store(cacheKey, new CachedTextureResult
-                {
-                    FinalSize = result.Size,
-                    FinalFormatName = result.Format.ToString(),
-                    CompressedRawBytes = result.Final.GetRawTextureData(),
-                }, settings.CacheMode);
-
-                Reporting.DecisionLog.Add(new Reporting.DecisionRecord
-                {
-                    OriginalTexture = tex,
-                    OrigSize = Mathf.Max(tex.width, tex.height),
-                    FinalSize = result.Size,
-                    OrigFormat = tex.format,
-                    FinalFormat = result.Format,
-                    SavedBytes = EstimateSavedBytes(tex, result),
-                    TextureScore = result.FinalVerdict.TextureScore,
-                    DominantMetric = result.FinalVerdict.DominantMetric ?? "-",
-                    DominantMipLevel = result.FinalVerdict.DominantMipLevel,
-                    WorstTileIndex = result.FinalVerdict.WorstTileIndex,
-                    CacheHit = false,
-                    ProcessingMs = result.ProcessingMs,
-                    Reason = result.DecisionReason,
-                });
+                UnityEngine.Profiling.Profiler.EndSample();
             }
         }
 

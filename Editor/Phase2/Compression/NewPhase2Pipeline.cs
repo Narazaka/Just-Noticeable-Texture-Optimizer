@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Profiling;
 using Narazaka.VRChat.Jnto;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
@@ -66,55 +67,92 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             int origSize = Mathf.Max(orig.width, orig.height);
             int minSize = DensityCalculator.MinSize;
 
-            int finalSize = BinarySearchStrategy.FindMinPassSize(origSize, minSize, size =>
+            int finalSize;
+            Profiler.BeginSample("JNTO.BinarySearch");
+            try
             {
-                if (size >= origSize) return true;
-                var candidateRt = PyramidBuilder.CreatePyramid(origCtx.Original, size, size, $"Jnto_Cand_{size}");
-                try
+                finalSize = BinarySearchStrategy.FindMinPassSize(origSize, minSize, size =>
                 {
-                    var v = _gate.Evaluate(origCtx.Original, candidateRt, grid, rPerTile,
-                        settings.Preset, _downscaleMetrics);
-                    return v.Pass;
-                }
-                finally
-                {
-                    candidateRt.Release();
-                    Object.DestroyImmediate(candidateRt);
-                }
-            });
+                    if (size >= origSize) return true;
+                    var candidateRt = PyramidBuilder.CreatePyramid(origCtx.Original, size, size, $"Jnto_Cand_{size}");
+                    try
+                    {
+                        var v = _gate.Evaluate(origCtx.Original, candidateRt, grid, rPerTile,
+                            settings.Preset, _downscaleMetrics);
+                        return v.Pass;
+                    }
+                    finally
+                    {
+                        candidateRt.Release();
+                        Object.DestroyImmediate(candidateRt);
+                    }
+                });
+            }
+            finally
+            {
+                Profiler.EndSample();
+            }
 
             // Debug dump (final size 確定後の downscale verdict のみ)
             if (!string.IsNullOrEmpty(settings.DebugDumpPath))
             {
-                int dumpSize = finalSize;
-                var dumpRt = PyramidBuilder.CreatePyramid(origCtx.Original, dumpSize, dumpSize, "Jnto_Final_Dbg");
+                Profiler.BeginSample("JNTO.DebugDump");
                 try
                 {
-                    var debugVerdict = _gate.EvaluateDebug(
-                        origCtx.Original, dumpRt, grid, rPerTile,
-                        settings.Preset, _downscaleMetrics,
-                        out var perMetric, out var names);
-                    Reporting.DebugDump.DumpTileScores(
-                        settings.DebugDumpPath, orig.name, grid, perMetric, names);
-                    for (int i = 0; i < names.Length; i++)
+                    int dumpSize = finalSize;
+                    var dumpRt = PyramidBuilder.CreatePyramid(origCtx.Original, dumpSize, dumpSize, "Jnto_Final_Dbg");
+                    try
                     {
-                        Reporting.DebugDump.DumpHeatmapPng(
-                            settings.DebugDumpPath, orig.name, names[i], grid, perMetric[i]);
+                        var debugVerdict = _gate.EvaluateDebug(
+                            origCtx.Original, dumpRt, grid, rPerTile,
+                            settings.Preset, _downscaleMetrics,
+                            out var perMetric, out var names);
+                        Reporting.DebugDump.DumpTileScores(
+                            settings.DebugDumpPath, orig.name, grid, perMetric, names);
+                        for (int i = 0; i < names.Length; i++)
+                        {
+                            Reporting.DebugDump.DumpHeatmapPng(
+                                settings.DebugDumpPath, orig.name, names[i], grid, perMetric[i]);
+                        }
+                    }
+                    finally
+                    {
+                        dumpRt.Release();
+                        Object.DestroyImmediate(dumpRt);
                     }
                 }
                 finally
                 {
-                    dumpRt.Release();
-                    Object.DestroyImmediate(dumpRt);
+                    Profiler.EndSample();
                 }
             }
 
             var lightweight = FormatPredictor.PredictLightweight(origStats, role, settings.Preset);
-            TextureFormat finalFmt = ChooseFormat(orig, origCtx, grid, rPerTile, settings, role,
-                                                  finalSize, lightweight,
-                                                  out var finalVerdict, out var reason);
+            TextureFormat finalFmt;
+            GateVerdict finalVerdict;
+            string reason;
+            Profiler.BeginSample("JNTO.ChooseFormat");
+            try
+            {
+                finalFmt = ChooseFormat(orig, origCtx, grid, rPerTile, settings, role,
+                                        finalSize, lightweight,
+                                        out finalVerdict, out reason);
+            }
+            finally
+            {
+                Profiler.EndSample();
+            }
 
-            var final = Encode(orig, finalSize, finalFmt);
+            Texture2D final;
+            Profiler.BeginSample("JNTO.FinalEncode");
+            try
+            {
+                final = Encode(orig, finalSize, finalFmt);
+            }
+            finally
+            {
+                Profiler.EndSample();
+            }
             sw.Stop();
             return new NewPhase2Result
             {
@@ -145,7 +183,16 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             var downsampled = ResolutionReducer.Resize(orig, size);
             try
             {
-                var candidate = TextureEncodeDecode.EncodeAndDecode(downsampled, lightweight.Format);
+                Texture2D candidate;
+                Profiler.BeginSample("JNTO.Encode." + lightweight.Format);
+                try
+                {
+                    candidate = TextureEncodeDecode.EncodeAndDecode(downsampled, lightweight.Format);
+                }
+                finally
+                {
+                    Profiler.EndSample();
+                }
                 using (var candCtx = GpuTextureContext.FromTexture2D(candidate))
                 using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled))
                 {
@@ -161,7 +208,16 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 }
 
                 var fallback = BC7Fallback(role);
-                var bc7Candidate = TextureEncodeDecode.EncodeAndDecode(downsampled, fallback);
+                Texture2D bc7Candidate;
+                Profiler.BeginSample("JNTO.Encode." + fallback);
+                try
+                {
+                    bc7Candidate = TextureEncodeDecode.EncodeAndDecode(downsampled, fallback);
+                }
+                finally
+                {
+                    Profiler.EndSample();
+                }
                 using (var bc7Ctx = GpuTextureContext.FromTexture2D(bc7Candidate))
                 using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled))
                 {

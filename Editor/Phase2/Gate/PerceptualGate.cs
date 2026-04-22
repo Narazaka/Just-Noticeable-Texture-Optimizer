@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Profiling;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
@@ -34,7 +35,15 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
             foreach (var m in metrics)
             {
                 System.Array.Clear(tmp, 0, tmp.Length);
-                m.Evaluate(orig, candidate, grid, rPerTile, _calib, tmp);
+                Profiler.BeginSample("JNTO.Gate." + m.Name);
+                try
+                {
+                    m.Evaluate(orig, candidate, grid, rPerTile, _calib, tmp);
+                }
+                finally
+                {
+                    Profiler.EndSample();
+                }
                 for (int i = 0; i < tileCount; i++)
                 {
                     if (tmp[i] > accum[i])
@@ -82,7 +91,15 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
             {
                 perMetricScores[i] = new float[tileCount];
                 metricNames[i] = metrics[i].Name;
-                metrics[i].Evaluate(orig, candidate, grid, rPerTile, _calib, perMetricScores[i]);
+                Profiler.BeginSample("JNTO.Gate." + metrics[i].Name);
+                try
+                {
+                    metrics[i].Evaluate(orig, candidate, grid, rPerTile, _calib, perMetricScores[i]);
+                }
+                finally
+                {
+                    Profiler.EndSample();
+                }
             }
 
             var accum = new float[tileCount];
