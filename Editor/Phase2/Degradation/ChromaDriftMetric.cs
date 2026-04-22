@@ -2,10 +2,6 @@ using UnityEngine;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
 {
-    /// <summary>
-    /// CIEDE2000 ベースの色差メトリクス。ΔE76 から ΔE00 に置き換え。
-    /// 最大 ΔE00 を 10 で正規化してスコア化。
-    /// </summary>
     public class ChromaDriftMetric : IDegradationMetric
     {
         public string Name => "ChromaDrift";
@@ -15,15 +11,15 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             var po = original.GetPixels();
             var pc = candidate.GetPixels();
             int n = Mathf.Min(po.Length, pc.Length);
-            double maxDe = 0;
+            if (n == 0) return 0f;
+
+            var deltas = new float[n];
             for (int i = 0; i < n; i++)
-            {
-                var labA = RgbToLab(po[i]);
-                var labB = RgbToLab(pc[i]);
-                double de = DeltaE00(labA, labB);
-                if (de > maxDe) maxDe = de;
-            }
-            return Mathf.Clamp01((float)(maxDe / 10.0));
+                deltas[i] = (float)DeltaE00(RgbToLab(po[i]), RgbToLab(pc[i]));
+
+            System.Array.Sort(deltas);
+            float p99 = deltas[Mathf.Min((int)(n * 0.99f), n - 1)];
+            return Mathf.Clamp01(p99 / 10f);
         }
 
         static Vector3 RgbToLab(Color c)
@@ -49,7 +45,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             double Cb = (C1 + C2) / 2.0;
 
             double Cb7 = System.Math.Pow(Cb, 7);
-            double G = 0.5 * (1.0 - System.Math.Sqrt(Cb7 / (Cb7 + 6103515625.0))); // 25^7
+            double G = 0.5 * (1.0 - System.Math.Sqrt(Cb7 / (Cb7 + 6103515625.0)));
             double a1p = a1 * (1.0 + G);
             double a2p = a2 * (1.0 + G);
             double C1p = System.Math.Sqrt(a1p * a1p + b1 * b1);
