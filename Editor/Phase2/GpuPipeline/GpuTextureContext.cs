@@ -13,7 +13,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline
         public int Width { get; private set; }
         public int Height { get; private set; }
 
-        public static GpuTextureContext FromTexture2D(Texture2D src)
+        public static GpuTextureContext FromTexture2D(Texture2D src, bool isLinear = false)
         {
             if (src == null) throw new ArgumentNullException(nameof(src));
 
@@ -21,9 +21,12 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline
             {
                 useMipMap = true,
                 autoGenerateMips = false,
-                sRGB = true,
+                // バグ#2 回帰防止: NormalMap/SingleChannel role (isLinear=true) では
+                // sRGB=false にして Blit 時の linear→sRGB ガンマ変換で値が破壊されるのを防ぐ。
+                sRGB = !isLinear,
             };
-            var rt = new RenderTexture(desc) { name = "Jnto_Orig_" + src.name };
+            // バグ#3 回帰防止: mipmap 補間に trilinear を明示指定 (spec)。
+            var rt = new RenderTexture(desc) { name = "Jnto_Orig_" + src.name, filterMode = FilterMode.Trilinear };
             rt.Create();
 
             Graphics.Blit(src, rt);

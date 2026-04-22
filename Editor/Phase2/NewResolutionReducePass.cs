@@ -96,6 +96,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     }
                 }
                 var role = TextureTypeClassifier.Classify(repMat, repProp, tex, alphaRequired);
+                // バグ#2 回帰防止: NormalMap / SingleChannel は linear texture なので
+                // GpuTextureContext/PyramidBuilder 側でも sRGB=false の RT を使う。
+                bool isLinear = role == TextureRole.NormalMap || role == TextureRole.SingleChannel;
                 var calib = settings.Calibration as DegradationCalibration ?? DegradationCalibration.Default();
 
                 // Persistent cache lookup
@@ -169,7 +172,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 // GPU context + block stats (cached per build)
                 if (!cache.Contexts.TryGetValue(tex, out var gpuCtx))
                 {
-                    gpuCtx = GpuTextureContext.FromTexture2D(tex);
+                    gpuCtx = GpuTextureContext.FromTexture2D(tex, isLinear);
                     cache.Contexts[tex] = gpuCtx;
                 }
                 if (!cache.BlockStats.TryGetValue(tex, out var stats))

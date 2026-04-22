@@ -9,13 +9,15 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline
     /// </summary>
     public static class PyramidBuilder
     {
-        public static RenderTexture CreatePyramid(Texture source, int width, int height, string debugName)
+        public static RenderTexture CreatePyramid(Texture source, int width, int height, string debugName, bool isLinear = false)
         {
             var desc = new RenderTextureDescriptor(width, height, RenderTextureFormat.ARGB32, 0)
             {
                 useMipMap = true,
                 autoGenerateMips = false,
-                sRGB = true,
+                // バグ#2 回帰防止: NormalMap/SingleChannel role (isLinear=true) では
+                // sRGB=false にして linear 値を保持する。
+                sRGB = !isLinear,
             };
             var rt = new RenderTexture(desc) { name = debugName, filterMode = FilterMode.Trilinear };
             rt.Create();

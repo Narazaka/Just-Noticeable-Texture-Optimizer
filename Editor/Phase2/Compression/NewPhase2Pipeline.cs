@@ -30,6 +30,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         readonly PerceptualGate _gate;
         readonly IMetric[] _downscaleMetrics;
         readonly IMetric[] _compressionMetrics;
+        readonly bool _isLinear;
 
         public NewPhase2Pipeline(DegradationCalibration calib, TextureRole role)
         {
@@ -37,6 +38,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             _gate = new PerceptualGate(calib);
             _downscaleMetrics = BuildMetrics(role, MetricContext.Downscale);
             _compressionMetrics = BuildMetrics(role, MetricContext.Compression);
+            // バグ#2 回帰防止: NormalMap / SingleChannel は linear color space で扱う。
+            _isLinear = role == TextureRole.NormalMap || role == TextureRole.SingleChannel;
         }
 
         static IMetric[] BuildMetrics(TextureRole role, MetricContext ctx)
@@ -94,7 +97,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 finalSize = BinarySearchStrategy.FindMinPassSize(origSize, minSize, size =>
                 {
                     if (size >= origSize) return true;
-                    var candidateRt = PyramidBuilder.CreatePyramid(origCtx.Original, size, size, $"Jnto_Cand_{size}");
+                    var candidateRt = PyramidBuilder.CreatePyramid(origCtx.Original, size, size, $"Jnto_Cand_{size}", _isLinear);
                     try
                     {
                         var v = _gate.Evaluate(origCtx.Original, candidateRt, grid, rPerTile,
@@ -120,7 +123,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 try
                 {
                     int dumpSize = finalSize;
-                    var dumpRt = PyramidBuilder.CreatePyramid(origCtx.Original, dumpSize, dumpSize, "Jnto_Final_Dbg");
+                    var dumpRt = PyramidBuilder.CreatePyramid(origCtx.Original, dumpSize, dumpSize, "Jnto_Final_Dbg", _isLinear);
                     try
                     {
                         var debugVerdict = _gate.EvaluateDebug(
@@ -213,8 +216,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 {
                     Profiler.EndSample();
                 }
-                using (var candCtx = GpuTextureContext.FromTexture2D(candidate))
-                using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled))
+                using (var candCtx = GpuTextureContext.FromTexture2D(candidate, _isLinear))
+                using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled, _isLinear))
                 {
                     verdict = _gate.Evaluate(origDownCtx.Original, candCtx.Original,
                         grid, rPerTile, settings.Preset, _compressionMetrics);
@@ -238,8 +241,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 {
                     Profiler.EndSample();
                 }
-                using (var bc7Ctx = GpuTextureContext.FromTexture2D(bc7Candidate))
-                using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled))
+                using (var bc7Ctx = GpuTextureContext.FromTexture2D(bc7Candidate, _isLinear))
+                using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled, _isLinear))
                 {
                     verdict = _gate.Evaluate(origDownCtx.Original, bc7Ctx.Original,
                         grid, rPerTile, settings.Preset, _compressionMetrics);
@@ -274,7 +277,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 var tex = new Texture2D(resized.width, resized.height, TextureFormat.RGBA32, true);
                 tex.name = $"{src.name}_{resized.width}x{resized.height}_{fmt}";
                 tex.SetPixels(resized.GetPixels());
-                tex.Apply();
+                // バグ#12 回帰防止: CompressTexture の前に mipchain を必ず更新する。
+                // Apply() は既定で updateMipmaps=true だが、意図を明示するため引数を与える。
+                tex.Apply(updateMipmaps: true);
                 UnityEditor.EditorUtility.CompressTexture(tex, fmt,
                     UnityEditor.TextureCompressionQuality.Normal);
                 return tex;
