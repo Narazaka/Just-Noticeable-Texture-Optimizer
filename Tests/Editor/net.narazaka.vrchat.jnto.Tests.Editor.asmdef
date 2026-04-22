@@ -2,7 +2,8 @@
   "name": "net.narazaka.vrchat.jnto.Tests.Editor",
   "references": [
     "net.narazaka.vrchat.jnto.Runtime",
-    "net.narazaka.vrchat.jnto.Editor"
+    "net.narazaka.vrchat.jnto.Editor",
+    "nadena.dev.ndmf"
   ],
   "includePlatforms": [ "Editor" ],
   "excludePlatforms": [],

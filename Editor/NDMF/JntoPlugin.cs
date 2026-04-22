@@ -16,7 +16,8 @@ namespace Narazaka.VRChat.Jnto.Editor
         protected override void Configure()
         {
             InPhase(BuildPhase.Optimizing)
-                .Run(NewResolutionReducePass.Instance)
+                .Run(AlphaStripPass.Instance)
+                .Then.Run(NewResolutionReducePass.Instance)
                 .PreviewingWith(new TextureOptimizerPreviewFilter());
         }
     }
