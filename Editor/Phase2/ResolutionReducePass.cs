@@ -60,7 +60,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 if (maxSize == 0) continue;
                 int orig = Mathf.Max(tex.width, tex.height);
                 int capped = Mathf.Min(orig, maxSize);
-                if (capped < orig) targets[tex] = capped;
+                targets[tex] = capped;
             }
 
             var densityMaps = new Dictionary<Texture2D, TexelDensityMap>();

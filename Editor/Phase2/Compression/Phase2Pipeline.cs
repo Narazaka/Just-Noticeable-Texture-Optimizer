@@ -42,7 +42,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         Phase2Result TrySizes(Texture2D original, int targetSize, int origMax,
             TextureFormat[] fmts, TextureRole role, QualityPreset preset, TexelDensityMap densityMap)
         {
-            for (int size = targetSize; size < origMax; size *= 2)
+            for (int size = targetSize; size <= origMax; size *= 2)
             {
                 var reference = ResolutionReducer.Resize(original, size);
 
