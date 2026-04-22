@@ -23,13 +23,13 @@ public class HighFrequencyMetricTests
     }
 
     [Test]
-    public void SlightlyDifferent_ReturnsSmall()
+    public void SlightNoise_OnDetailedTexture_ReturnsSmall()
     {
-        var a = MakeGradient(64);
+        var a = MakeCheckerboard(64);
         var b = AddNoise(a, 0.01f);
         var m = new HighFrequencyMetric();
         float s = m.Evaluate(a, b);
-        Assert.Less(s, 0.5f);
+        Assert.Less(s, 0.5f, "Small noise on high-detail texture should not score high");
     }
 
     static Texture2D MakeCheckerboard(int n)
