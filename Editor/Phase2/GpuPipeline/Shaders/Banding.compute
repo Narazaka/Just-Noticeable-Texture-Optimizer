@@ -17,6 +17,9 @@ float _BandingScale;
 
 float lum(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 
+// 平坦領域の「candidate に出ている階段化ピーク」と「orig に元から出ている
+// ピーク」の差分を score 化する。
+// orig=cand のときは両ヒストグラムが一致するので score=0 になる。
 [numthreads(8, 8, 1)]
 void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
 {
@@ -38,8 +41,9 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
 
     const int N = 16;
     int flatCount = 0;
-    int bins[32];
-    [unroll] for (int b = 0; b < 32; b++) bins[b] = 0;
+    int binsO[32];
+    int binsC[32];
+    [unroll] for (int b = 0; b < 32; b++) { binsO[b] = 0; binsC[b] = 0; }
 
     for (int sy = 0; sy < N; sy++)
     for (int sx = 0; sx < N; sx++)
@@ -57,12 +61,22 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         }
         if (mx - mn > 0.02) continue;
 
+        // candidate の 2 次微分
         float cc = lum(_Candidate.SampleLevel(sampler_Candidate, uv, 0).rgb);
         float cl = lum(_Candidate.SampleLevel(sampler_Candidate, uv - float2(pxW, 0), 0).rgb);
         float cr = lum(_Candidate.SampleLevel(sampler_Candidate, uv + float2(pxW, 0), 0).rgb);
-        float d2 = cr - 2.0 * cc + cl;
-        int bin = clamp((int)((d2 + 0.5) * 32), 0, 31);
-        bins[bin]++;
+        float d2c = cr - 2.0 * cc + cl;
+        int binC = clamp((int)((d2c + 0.5) * 32), 0, 31);
+        binsC[binC]++;
+
+        // orig の 2 次微分 (ベースライン)
+        float oc = c;
+        float ol = lum(_Orig.SampleLevel(sampler_Orig, uv - float2(pxW, 0), 0).rgb);
+        float orr = lum(_Orig.SampleLevel(sampler_Orig, uv + float2(pxW, 0), 0).rgb);
+        float d2o = orr - 2.0 * oc + ol;
+        int binO = clamp((int)((d2o + 0.5) * 32), 0, 31);
+        binsO[binO]++;
+
         flatCount++;
     }
 
@@ -72,11 +86,15 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         return;
     }
 
-    int peak = 0;
+    int peakC = 0;
+    int peakO = 0;
     for (int i = 0; i < 32; i++)
     {
-        if (i != 16 && bins[i] > peak) peak = bins[i];
+        if (i == 16) continue; // center bin (= d2~0) を除外 (平坦ピークが常に立つ)
+        if (binsC[i] > peakC) peakC = binsC[i];
+        if (binsO[i] > peakO) peakO = binsO[i];
     }
-    float ratio = (float)peak / ((float)flatCount * 0.1);
-    _Scores[tileIdx] = saturate(ratio) * _BandingScale;
+    // candidate のピーク比から orig のピーク比を引いた「過剰ピーク」を score 化
+    float extra = (float)(peakC - peakO) / ((float)flatCount * 0.1);
+    _Scores[tileIdx] = saturate(max(0.0, extra)) * _BandingScale;
 }

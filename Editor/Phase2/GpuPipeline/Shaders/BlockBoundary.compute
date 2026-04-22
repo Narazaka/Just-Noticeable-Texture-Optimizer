@@ -1,5 +1,7 @@
 #pragma kernel CSEvaluate
 
+Texture2D<float4> _Orig;
+SamplerState sampler_Orig;
 Texture2D<float4> _Candidate;
 SamplerState sampler_Candidate;
 
@@ -15,6 +17,9 @@ float _BlockBoundaryScale;
 
 float lum(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 
+// onGrid (x%4==0) / offGrid 差分比を「candidate の比 − orig の比」で取り
+// 「圧縮で新たに発生した 4×4 境界アーチファクト」のみを score 化する。
+// orig=cand のときは差=0 で score=0 になる。
 [numthreads(8, 8, 1)]
 void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
 {
@@ -29,7 +34,6 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         return;
     }
 
-    // タイル UV 範囲 → ピクセル範囲に変換
     int px0 = (tx * _TextureWidth) / _TilesX;
     int py0 = (ty * _TextureHeight) / _TilesY;
     int px1 = ((tx + 1) * _TextureWidth) / _TilesX;
@@ -43,27 +47,32 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     float pxW = 1.0 / (float)_TextureWidth;
     float pxH = 1.0 / (float)_TextureHeight;
 
-    float onSum = 0.0; int onCount = 0;
-    float offSum = 0.0; int offCount = 0;
+    float onSumC = 0.0; float offSumC = 0.0;
+    float onSumO = 0.0; float offSumO = 0.0;
+    int onCount = 0; int offCount = 0;
 
     for (int y = py0; y < py1; y++)
     {
         for (int x = px0 + 1; x < px1; x++)
         {
-            float2 uv  = (float2(x, y) + 0.5) * float2(pxW, pxH);
+            float2 uv  = (float2(x,     y) + 0.5) * float2(pxW, pxH);
             float2 uvL = (float2(x - 1, y) + 0.5) * float2(pxW, pxH);
+
             float c  = lum(_Candidate.SampleLevel(sampler_Candidate, uv,  0).rgb);
             float cL = lum(_Candidate.SampleLevel(sampler_Candidate, uvL, 0).rgb);
-            float d = abs(c - cL);
+            float dC = abs(c - cL);
+
+            float o  = lum(_Orig.SampleLevel(sampler_Orig, uv,  0).rgb);
+            float oL = lum(_Orig.SampleLevel(sampler_Orig, uvL, 0).rgb);
+            float dO = abs(o - oL);
+
             if ((x & 3) == 0)
             {
-                onSum += d;
-                onCount++;
+                onSumC += dC; onSumO += dO; onCount++;
             }
             else
             {
-                offSum += d;
-                offCount++;
+                offSumC += dC; offSumO += dO; offCount++;
             }
         }
     }
@@ -74,11 +83,20 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         return;
     }
 
-    float onAvg = onSum / (float)onCount;
-    float offAvg = offSum / (float)offCount;
-    // CPU 参照と同じく 0 除算を避けるために offAvg を下駄あげ。
-    // 完全な step パターン (offGrid 差分が 0) でも ratio を巨大値にして検出できる。
-    float ratio = onAvg / max(offAvg, 1e-6);
-    float score = saturate((ratio - 1.5) / 1.5);
+    float onAvgC = onSumC / (float)onCount;
+    float offAvgC = offSumC / (float)offCount;
+    float onAvgO = onSumO / (float)onCount;
+    float offAvgO = offSumO / (float)offCount;
+
+    // CPU 参照と整合: 0 除算は 1e-6 で下駄あげ
+    float ratioC = onAvgC / max(offAvgC, 1e-6);
+    float ratioO = onAvgO / max(offAvgO, 1e-6);
+
+    // 「圧縮で追加で立ったブロック境界」= candidate の ratio 超過 − orig の ratio 超過
+    float extraC = max(0.0, ratioC - 1.5);
+    float extraO = max(0.0, ratioO - 1.5);
+    float extra = max(0.0, extraC - extraO);
+
+    float score = saturate(extra / 1.5);
     _Scores[tileIdx] = score * _BlockBoundaryScale;
 }

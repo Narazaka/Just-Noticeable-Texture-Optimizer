@@ -18,6 +18,43 @@ float _StructureScale;
 
 float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
+// 5x5 window SSIM の c(x,y)·s(x,y) 構造項。luminance 項 l は捨てる。
+// MsslMetricCpu と同じ数式 (c_term × s_term の 1 - 値 の平均):
+//   c = (2*sigA*sigB + C2) / (varA + varB + C2)
+//   s = (cov + C3) / (sigA*sigB + C3)
+//   structLoss = max(0, 1 - c*s) の window 平均。
+float StructureLoss5x5(int2 center, float lvF)
+{
+    const int R = 2; // 5x5
+    const int N = 25;
+    float sumA = 0.0, sumB = 0.0;
+    float sumAA = 0.0, sumBB = 0.0, sumAB = 0.0;
+    for (int ky = -R; ky <= R; ky++)
+    for (int kx = -R; kx <= R; kx++)
+    {
+        float2 uv = (float2(center.x + kx, center.y + ky) + 0.5) /
+                    float2((float)_TextureWidth, (float)_TextureHeight);
+        float a = lum(_Orig.SampleLevel(sampler_Orig, uv, lvF).rgb);
+        float b = lum(_Candidate.SampleLevel(sampler_Candidate, uv, lvF).rgb);
+        sumA += a; sumB += b;
+        sumAA += a * a; sumBB += b * b; sumAB += a * b;
+    }
+    float muA = sumA / (float)N;
+    float muB = sumB / (float)N;
+    float varA = max(0.0, sumAA / (float)N - muA * muA);
+    float varB = max(0.0, sumBB / (float)N - muB * muB);
+    float cov  = sumAB / (float)N - muA * muB;
+
+    const float C2 = 0.03 * 0.03;
+    const float C3 = C2 * 0.5;
+    float sigA = sqrt(varA);
+    float sigB = sqrt(varB);
+    float cTerm = (2.0 * sigA * sigB + C2) / (varA + varB + C2);
+    float sTerm = (cov + C3) / (sigA * sigB + C3);
+    float structSim = cTerm * sTerm;
+    return max(0.0, 1.0 - structSim);
+}
+
 [numthreads(8, 8, 1)]
 void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
 {
@@ -36,6 +73,12 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     float ratio = (float)_TileSize / max(r, 1e-3);
     int targetLv = (int)floor(log2(ratio));
 
+    // タイル範囲 (pixel 座標)
+    int px0 = (tx * _TextureWidth) / _TilesX;
+    int py0 = (ty * _TextureHeight) / _TilesY;
+    int px1 = ((tx + 1) * _TextureWidth) / _TilesX;
+    int py1 = ((ty + 1) * _TextureHeight) / _TilesY;
+
     float2 tileUvMin = float2(tx, ty) / float2(_TilesX, _TilesY);
     float2 tileUvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
 
@@ -50,8 +93,9 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float eO = 0.0;
         float dDiff = 0.0;
         float sumStruct = 0.0;
-        int count = 0;
+        int structCount = 0;
 
+        // Band Energy: Laplacian 差分の Σ(laplO - laplC)² / Σ laplO² (サブサンプル)
         for (int sy = 0; sy < SamplesPerSide; sy++)
         for (int sx = 0; sx < SamplesPerSide; sx++)
         {
@@ -68,15 +112,30 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
             eO += laplO * laplO;
             float dd = laplO - laplC;
             dDiff += dd * dd;
+        }
 
-            float lO = lum(oLv.rgb);
-            float lC = lum(cLv.rgb);
-            sumStruct += abs(lO - lC);
-            count++;
+        // Structure-only SSIM: 5x5 window で c·s を評価 (2 px step でサブサンプル)
+        // 計算量を抑えるため最大 16 window までに制限。
+        int winR = 2;
+        int x0 = px0 + winR;
+        int y0 = py0 + winR;
+        int x1 = px1 - winR;
+        int y1 = py1 - winR;
+        if (x1 > x0 && y1 > y0)
+        {
+            int stepX = max(1, (x1 - x0) / 4);
+            int stepY = max(1, (y1 - y0) / 4);
+            for (int yy = y0; yy < y1; yy += stepY)
+            for (int xx = x0; xx < x1; xx += stepX)
+            {
+                sumStruct += StructureLoss5x5(int2(xx, yy), (float)lv);
+                structCount++;
+                if (structCount >= 16) break;
+            }
         }
 
         float band = eO > 1e-6 ? saturate(dDiff / eO) : 0.0;
-        float structAvg = count > 0 ? sumStruct / (float)count : 0.0;
+        float structAvg = structCount > 0 ? sumStruct / (float)structCount : 0.0;
 
         float sBand = band * _BandScale * scaleWeight;
         float sStruct = structAvg * _StructureScale * scaleWeight;

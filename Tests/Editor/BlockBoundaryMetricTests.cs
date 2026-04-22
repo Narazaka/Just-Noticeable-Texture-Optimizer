@@ -9,25 +9,29 @@ public class BlockBoundaryMetricTests
     [Test]
     public void GridStepPattern_DetectsBoundary()
     {
-        // 4 px ごとにステップが入るパターン (BC ブロック境界を模す)
-        var t = MakeGridSteps(128, period: 4);
+        // orig: smooth gradient (境界なし) / cand: 4-px step pattern (BC ブロック境界を模す)
+        // 「圧縮で追加で生まれた block 境界」= orig vs cand 差分でスコア化される前提。
+        var orig = MakeGradient(128);
+        var cand = MakeGridSteps(128, period: 4);
         var grid = UvTileGrid.Create(128, 128);
         MarkAllCovered(grid);
         var r = FullR(grid);
         var calib = DegradationCalibration.Default();
 
-        using (var ctx = GpuTextureContext.FromTexture2D(t))
+        using (var ctxO = GpuTextureContext.FromTexture2D(orig))
+        using (var ctxC = GpuTextureContext.FromTexture2D(cand))
         {
             var metric = new BlockBoundaryMetric();
             var scores = new float[grid.Tiles.Length];
-            metric.Evaluate(null, ctx.Original, grid, r, calib, scores);
+            metric.Evaluate(ctxO.Original, ctxC.Original, grid, r, calib, scores);
 
             float maxScore = 0f;
             foreach (var s in scores) if (s > maxScore) maxScore = s;
             Assert.Greater(maxScore, 0.1f, "4-px step pattern should produce block boundary score");
         }
 
-        Object.DestroyImmediate(t);
+        Object.DestroyImmediate(orig);
+        Object.DestroyImmediate(cand);
         Object.DestroyImmediate(calib);
     }
 
@@ -44,7 +48,7 @@ public class BlockBoundaryMetricTests
         {
             var metric = new BlockBoundaryMetric();
             var scores = new float[grid.Tiles.Length];
-            metric.Evaluate(null, ctx.Original, grid, r, calib, scores);
+            metric.Evaluate(ctx.Original, ctx.Original, grid, r, calib, scores);
 
             float maxScore = 0f;
             foreach (var s in scores) if (s > maxScore) maxScore = s;
@@ -58,20 +62,23 @@ public class BlockBoundaryMetricTests
     [Test]
     public void NoCoverage_Zero()
     {
-        var t = MakeGridSteps(128, period: 4);
+        var orig = MakeGradient(128);
+        var cand = MakeGridSteps(128, period: 4);
         var grid = UvTileGrid.Create(128, 128);
         var r = new float[grid.Tiles.Length];
         var calib = DegradationCalibration.Default();
 
-        using (var ctx = GpuTextureContext.FromTexture2D(t))
+        using (var ctxO = GpuTextureContext.FromTexture2D(orig))
+        using (var ctxC = GpuTextureContext.FromTexture2D(cand))
         {
             var metric = new BlockBoundaryMetric();
             var scores = new float[grid.Tiles.Length];
-            metric.Evaluate(null, ctx.Original, grid, r, calib, scores);
+            metric.Evaluate(ctxO.Original, ctxC.Original, grid, r, calib, scores);
             foreach (var s in scores) Assert.AreEqual(0f, s, 0.001f);
         }
 
-        Object.DestroyImmediate(t);
+        Object.DestroyImmediate(orig);
+        Object.DestroyImmediate(cand);
         Object.DestroyImmediate(calib);
     }
 

@@ -28,11 +28,13 @@ public class MetricTileCoverageTests
     [Test]
     public void Banding_AllTilesEvaluated_WhenInputDiffersPerTile()
     {
-        // Banding は orig が「平坦領域あり」、candidate が「量子化済み」の差で立つ
-        // grid tile size は 256x256 で 32 (UvTileGrid.DetermineTileSize)、なので pattern_tile=32 で合わせる
-        // orig は tile 内で slight な gradient を持ち flat region を広く確保、cand は粗く量子化して段差を作る
-        var origTex = MakeTilewiseQuantizedGradient(256, 32, quantizeBase: 0);
-        var candTex = MakeTilewiseQuantizedGradient(256, 32, quantizeBase: 4);
+        // Banding は orig が「平坦領域あり」、candidate が「量子化済み」の差で立つ。
+        // orig: 各タイルほぼフラット (baseValue + 微小 noise) で flat 判定を通し、
+        //       d2 ヒストグラムは noise のみ → peakO 小。
+        // cand: 各タイル水平方向の rampp を 3〜6 レベル量子化 → 水平 d2 に clear なスパイク
+        //       → peakC ≫ peakO → diff > 0 → score > 0 (tile ごとに levels 変化で variance)。
+        var origTex = MakeTilewiseFlatNoise(256, 32);
+        var candTex = MakeTilewiseBandedRamp(256, 32);
         try
         {
             AssertTileScoreVarianceWithCustomTextures(new BandingMetric(), origTex, candTex);
@@ -47,14 +49,21 @@ public class MetricTileCoverageTests
     [Test]
     public void BlockBoundary_AllTilesEvaluated_WhenInputDiffersPerTile()
     {
-        // BlockBoundary は candidate のみ参照、4-px ブロック境界差を見る
-        // grid tile size 32 に合わせて pattern_tile=32、period を tile ごとに {1,2,3} (0/1/2 mod 3)
+        // BlockBoundary は orig/cand 差分 (candidate で追加で立った block 境界比 − orig 比) を見る。
+        // orig: flat gray baseline (block 境界なし) / cand: tile 別 step パターン
+        //   → cand の ratio − orig の ratio が tile ごとに変化する。
+        // grid tile size 32 に合わせて pattern_tile=32、step 強度と noise を tile ごとにばらつかせる。
+        var origTex = TestTextureFactory.MakeSolid(256, 256, new Color(0.5f, 0.5f, 0.5f, 1f));
         var candTex = MakeTilewiseStepPattern(256, 32);
         try
         {
-            AssertTileScoreVarianceWithCustomTextures(new BlockBoundaryMetric(), candTex, candTex);
+            AssertTileScoreVarianceWithCustomTextures(new BlockBoundaryMetric(), origTex, candTex);
         }
-        finally { Object.DestroyImmediate(candTex); }
+        finally
+        {
+            Object.DestroyImmediate(origTex);
+            Object.DestroyImmediate(candTex);
+        }
     }
 
     [Test]
@@ -179,12 +188,10 @@ public class MetricTileCoverageTests
         return dst;
     }
 
-    static Texture2D MakeTilewiseQuantizedGradient(int n, int tileSize, int quantizeBase)
+    static Texture2D MakeTilewiseFlatNoise(int n, int tileSize)
     {
-        // Banding metric 用: 「平坦領域で量子化段差を検出」
-        // orig (quantizeBase=0): per-tile に baseValue + 微小 gradient (<0.02/3px で flat 判定通過)
-        // cand (quantizeBase>0): 微小 gradient を 4..7 レベルで粗量子化 → 段差を作る
-        // タイル別に baseValue と gradient 方向をばらつかせ、score に variance を出す。
+        // orig 用: 各タイル baseValue (0.3..0.6) + 非常に微小な pseudo-noise (<0.005)。
+        // 3x3 max-min < 0.02 の flat 判定を確実に通し、d2 ヒストグラムは noise のみ → peakO 小。
         var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
         var px = new Color[n * n];
         for (int y = 0; y < n; y++)
@@ -192,16 +199,37 @@ public class MetricTileCoverageTests
         {
             int tx = x / tileSize;
             int ty = y / tileSize;
-            float baseValue = 0.3f + ((tx + ty) % 4) * 0.1f;   // 0.3..0.6
-            float amplitude = 0.15f;                             // 3x3 max-min ~ 2*(0.15/32)*3 = 0.028; sRGB compression → OK
-            // タイル内 gradient 方向 (x/y) を tile 依存で切替
-            bool xDir = ((tx * 3 + ty) & 1) == 0;
-            float local = xDir
-                ? (x % tileSize) / (float)tileSize
-                : (y % tileSize) / (float)tileSize;
-            float v = baseValue + (local - 0.5f) * amplitude;
-            int q = quantizeBase == 0 ? 0 : (quantizeBase + ((tx + ty) % 4));
-            if (q > 0) v = Mathf.Round(v * (q - 1)) / Mathf.Max(1, q - 1);
+            float baseValue = 0.3f + ((tx + ty) % 4) * 0.1f;
+            int h = ((x * 73856093) ^ (y * 19349663)) & 0xffff;
+            float noise = ((h / 65535f) - 0.5f) * 0.004f;
+            float v = Mathf.Clamp01(baseValue + noise);
+            px[y * n + x] = new Color(v, v, v, 1f);
+        }
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+
+    static Texture2D MakeTilewiseBandedRamp(int n, int tileSize)
+    {
+        // cand 用: orig とほぼ同じ baseValue だが、各タイル水平方向に小 amplitude ramp を
+        // 量子化したステップ(2〜5 level)を重ねる。水平 d2 にタイル別にクリアなスパイクを作り
+        // peakC ≫ peakO となるよう設計する。
+        // タイル別に levels を変えて score variance を出す。
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        var px = new Color[n * n];
+        for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++)
+        {
+            int tx = x / tileSize;
+            int ty = y / tileSize;
+            float baseValue = 0.3f + ((tx + ty) % 4) * 0.1f;
+            int levels = 2 + ((tx * 5 + ty * 3) % 4); // 2..5
+            float amplitude = 0.04f + ((tx + ty * 7) % 4) * 0.02f; // 0.04..0.10
+            float local = (x % tileSize) / (float)(tileSize - 1); // 0..1
+            // local を levels-1 段に量子化して [0..1] 階段 → amplitude をかけて step 化
+            float quantized = Mathf.Round(local * (levels - 1)) / Mathf.Max(1, levels - 1);
+            float stepped = quantized * amplitude;
+            float v = Mathf.Clamp01(baseValue + stepped - amplitude * 0.5f);
             px[y * n + x] = new Color(v, v, v, 1f);
         }
         t.SetPixels(px); t.Apply();

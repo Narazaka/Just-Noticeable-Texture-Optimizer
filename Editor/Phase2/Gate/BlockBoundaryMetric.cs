@@ -6,8 +6,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
 {
     /// <summary>
     /// BC1 / DXT5 等の 4x4 ブロック境界由来のアーチファクトを per-tile で検出する。
-    /// candidate のみを走査し、x % 4 == 0 の列 (onGrid) と それ以外の列 (offGrid) の
-    /// 水平輝度差平均比 (onAvg / offAvg) が 1.5 を超えた分を JND 係数を掛けてスコアにする。
+    /// orig/candidate それぞれで x % 4 == 0 の列 (onGrid) と それ以外の列 (offGrid) の
+    /// 水平輝度差平均比 (onAvg / offAvg) を計算し、「candidate で追加された過剰比」のみ
+    /// を JND スコアに換算する。orig=cand のときは差分=0 → score=0。
     /// </summary>
     public class BlockBoundaryMetric : IMetric
     {
@@ -30,6 +31,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
 
             try
             {
+                // orig 未指定時は candidate をベースラインとして渡す (単体 texture 診断用途)。
+                cs.SetTexture(k, "_Orig", orig != null ? orig : candidate);
                 cs.SetTexture(k, "_Candidate", candidate);
                 cs.SetBuffer(k, "_Scores", scoreBuf);
                 cs.SetBuffer(k, "_RPerTile", rBuf);
