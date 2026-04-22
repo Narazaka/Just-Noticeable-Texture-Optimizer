@@ -206,7 +206,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             {
                 verdict = new GateVerdict { Pass = true, TextureScore = 0f };
                 reason = $"Fast-mode skip verify for {lightweight.Format} (conf={lightweight.Confidence:F2})";
-                return lightweight.Format;
+                return EnforceRoleConstraint(lightweight.Format, role, orig.format);
             }
 
             var downsampled = ResolutionReducer.Resize(orig, size);
@@ -233,7 +233,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 if (verdict.Pass)
                 {
                     reason = $"lightweight {lightweight.Format} verify PASS (score={verdict.TextureScore:F3})";
-                    return lightweight.Format;
+                    return EnforceRoleConstraint(lightweight.Format, role, orig.format);
                 }
 
                 var fallback = BC7Fallback(role);
@@ -258,7 +258,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 reason = verdict.Pass
                     ? $"{fallback} fallback PASS (score={verdict.TextureScore:F3})"
                     : $"{fallback} fallback FAIL, keeping original";
-                return verdict.Pass ? fallback : orig.format;
+                return verdict.Pass
+                    ? EnforceRoleConstraint(fallback, role, orig.format)
+                    : orig.format;
             }
             finally
             {
@@ -273,9 +275,51 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 // バグ#5 回帰防止: SingleChannel は BC4 (lightweight) でほぼロスレス。
                 // それでも fail するならサイズ縮小に頼る方が容量効率が良いので BC7 にする。
                 // R8 (非圧縮 8bpp) は BC4 (4bpp) より大きく、fallback として論外。
-                case TextureRole.SingleChannel: return TextureFormat.BC7;
+                case TextureRole.NormalMap: return TextureFormat.BC7;       // BC5 fail → BC7 (normal を保持)
+                case TextureRole.SingleChannel: return TextureFormat.BC7;   // BC4 fail → BC7
+                case TextureRole.ColorOpaque: return TextureFormat.BC7;     // DXT1 fail → BC7 (α 持つが lossless 扱い)
+                case TextureRole.ColorAlpha: return TextureFormat.BC7;      // DXT5 fail → BC7
                 default: return TextureFormat.BC7;
             }
+        }
+
+        /// <summary>
+        /// 元 texture の本質的特性 (α の有無、normal/single-channel) を保持する保守ガード。
+        /// 「α 無し input → α あり output」や「NormalMap role → DXT5」等の論理的におかしい昇格を拒否する。
+        /// </summary>
+        static TextureFormat EnforceRoleConstraint(TextureFormat chosen, TextureRole role, TextureFormat origFormat)
+        {
+            // 元 fmt が α 無し系なら、新 fmt も α 無し系に強制 (DXT5 への化けを拒否)
+            bool origIsAlphaFree = origFormat == TextureFormat.DXT1
+                                || origFormat == TextureFormat.DXT1Crunched
+                                || origFormat == TextureFormat.BC4
+                                || origFormat == TextureFormat.BC5
+                                || origFormat == TextureFormat.BC6H
+                                || origFormat == TextureFormat.R8
+                                || origFormat == TextureFormat.RGB24;
+            if (origIsAlphaFree && (chosen == TextureFormat.DXT5 || chosen == TextureFormat.DXT5Crunched))
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"[JNTO] EnforceRoleConstraint: origFormat={origFormat} is alpha-free, " +
+                    $"refusing to upgrade to {chosen}. Falling back to BC7 (preserves color, keeps single 8bpp).");
+                return TextureFormat.BC7;
+            }
+            // role が NormalMap なら BC5 か BC7 のみ
+            if (role == TextureRole.NormalMap && chosen != TextureFormat.BC5 && chosen != TextureFormat.BC7)
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"[JNTO] EnforceRoleConstraint: NormalMap role but chosen={chosen}, " +
+                    $"forcing BC7 to preserve normal channels.");
+                return TextureFormat.BC7;
+            }
+            // role が SingleChannel なら BC4 か BC7 のみ
+            if (role == TextureRole.SingleChannel && chosen != TextureFormat.BC4 && chosen != TextureFormat.BC7)
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"[JNTO] EnforceRoleConstraint: SingleChannel role but chosen={chosen}, forcing BC4.");
+                return TextureFormat.BC4;
+            }
+            return chosen;
         }
 
         static Texture2D Encode(Texture2D src, int size, TextureFormat fmt)
