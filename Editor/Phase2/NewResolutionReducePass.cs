@@ -47,6 +47,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 }
                 ApplyReplacements(root, graph, replaced);
             }
+
+            Reporting.JntoNdmfReport.Emit();
         }
 
         void ProcessTexture(
