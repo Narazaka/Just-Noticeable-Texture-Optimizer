@@ -8,5 +8,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
         float Evaluate(Texture2D original, Texture2D candidate);
     }
 
-    public enum MetricComparison { GreaterEqual, LessEqual }
+    public interface IPerPixelMetric : IDegradationMetric
+    {
+        float[] EvaluatePerPixel(Texture2D original, Texture2D candidate);
+    }
 }

@@ -22,11 +22,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             var graph = TextureReferenceCollector.Collect(root);
 
             var rendererStats = new Dictionary<Renderer, List<MeshDensityStats>>();
+            var rendererSettings = new Dictionary<Renderer, ResolvedSettings>();
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
                 var settings = SettingsResolver.Resolve(r.transform);
                 if (settings == null || settings.BoneWeights == null) continue;
                 rendererStats[r] = MeshDensityAnalyzer.Analyze(r, bonemap, settings.BoneWeights);
+                rendererSettings[r] = settings;
             }
 
             var targets = new Dictionary<Texture2D, int>();
@@ -61,6 +63,25 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 if (capped < orig) targets[tex] = capped;
             }
 
+            var densityMaps = new Dictionary<Texture2D, TexelDensityMap>();
+            foreach (var kv in targets)
+            {
+                var tex = kv.Key;
+                TexelDensityMap combined = null;
+                foreach (var tref in graph.Map[tex])
+                {
+                    if (tref.RendererContext == null) continue;
+                    if (!rendererSettings.TryGetValue(tref.RendererContext, out var settings)) continue;
+                    Mesh mesh = GetMesh(tref.RendererContext);
+                    if (mesh == null) continue;
+                    var map = TexelDensityMap.Build(
+                        tref.RendererContext, mesh, tex.width, tex.height,
+                        bonemap, settings.BoneWeights);
+                    combined = TexelDensityMap.Merge(combined, map);
+                }
+                if (combined != null) densityMaps[tex] = combined;
+            }
+
             var pipeline = new Phase2Pipeline();
             var replaced = new Dictionary<Texture2D, Texture2D>();
             foreach (var kv in targets)
@@ -85,7 +106,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 var resolvedSettings = SettingsResolver.Resolve(settingsSource ?? root.transform);
                 if (resolvedSettings == null) continue;
 
-                var result = pipeline.Find(tex, target, role, resolvedSettings.Preset);
+                densityMaps.TryGetValue(tex, out var densityMap);
+                var result = pipeline.Find(tex, target, role, resolvedSettings.Preset, densityMap);
                 if (result.Final != tex)
                 {
                     ObjectRegistry.RegisterReplacedObject(tex, result.Final);
@@ -107,6 +129,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             Phase1.AlphaStripPass.SafeSetTextures(root, cloneMap, replaced);
         }
 
+        static Mesh GetMesh(Renderer renderer)
+        {
+            if (renderer is SkinnedMeshRenderer smr) return smr.sharedMesh;
+            if (renderer is MeshRenderer mr)
+            {
+                var mf = mr.GetComponent<MeshFilter>();
+                return mf != null ? mf.sharedMesh : null;
+            }
+            return null;
+        }
+
         static ComplexityStrategyAsset GetAncestorStrategy(Transform leaf)
         {
             for (var t = leaf; t != null; t = t.parent)
@@ -119,9 +152,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
 
         static Rect ComputeUvBoundingRect(Renderer renderer)
         {
-            Mesh mesh = null;
-            if (renderer is SkinnedMeshRenderer smr) mesh = smr.sharedMesh;
-            else if (renderer is MeshRenderer mr) { var mf = mr.GetComponent<MeshFilter>(); if (mf) mesh = mf.sharedMesh; }
+            Mesh mesh = GetMesh(renderer);
             if (mesh == null) return new Rect(0, 0, 1, 1);
             var uv = mesh.uv;
             if (uv == null || uv.Length == 0) return new Rect(0, 0, 1, 1);

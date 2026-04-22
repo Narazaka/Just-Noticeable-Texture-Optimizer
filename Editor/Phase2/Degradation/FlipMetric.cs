@@ -6,9 +6,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
     /// NVIDIA FLIP (LDR) の C# 実装。
     /// カラーパイプライン (Hunt調整 + CSFフィルタ + HyAB色差) と
     /// フィーチャーパイプライン (ガウシアン微分によるエッジ/ポイント検出) を統合。
-    /// Banding / BlockBoundary / Ringing / HighFrequency / SSIM を1つに代替。
     /// </summary>
-    public class FlipMetric : IDegradationMetric
+    public class FlipMetric : IPerPixelMetric
     {
         public string Name => "FLIP";
 
@@ -21,14 +20,22 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
 
         public float Evaluate(Texture2D original, Texture2D candidate)
         {
+            var scores = EvaluatePerPixel(original, candidate);
+            if (scores == null || scores.Length == 0) return 0f;
+            double sum = 0;
+            for (int i = 0; i < scores.Length; i++) sum += scores[i];
+            return (float)(sum / scores.Length);
+        }
+
+        public float[] EvaluatePerPixel(Texture2D original, Texture2D candidate)
+        {
             int w = original.width, h = original.height;
             var pxO = original.GetPixels();
             var pxC = candidate.GetPixels();
-            if (pxO.Length != pxC.Length || w < 3 || h < 3) return 0f;
+            if (pxO.Length != pxC.Length || w < 3 || h < 3) return null;
 
             float ppd = DefaultPpd;
 
-            // 1. sRGB → linear → YCxCz (Hunt adjusted)
             var ycxczO = new Vector3[w * h];
             var ycxczC = new Vector3[w * h];
             var lumO = new float[w * h];
@@ -41,11 +48,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
                 lumC[i] = 0.2126f * SrgbToLin(pxC[i].r) + 0.7152f * SrgbToLin(pxC[i].g) + 0.0722f * SrgbToLin(pxC[i].b);
             }
 
-            // 2. CSF spatial filtering
             CsfFilter(ycxczO, w, h, ppd);
             CsfFilter(ycxczC, w, h, ppd);
 
-            // 3. Color difference (HyAB + remap)
             float cmax = ComputeCmax();
             float pccmax = Pc * cmax;
             var colorDiff = new float[w * h];
@@ -60,18 +65,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
                 colorDiff[i] = Mathf.Clamp01(d);
             }
 
-            // 4. Feature difference (edge + point detection)
             var featureDiff = ComputeFeatureDiff(lumO, lumC, w, h, ppd);
 
-            // 5. Final FLIP: colorDiff^(1 - featureDiff)
-            double sum = 0;
+            var result = new float[w * h];
             for (int i = 0; i < pxO.Length; i++)
-            {
-                float flip = Mathf.Pow(colorDiff[i], Mathf.Max(1f - featureDiff[i], 0.001f));
-                sum += flip;
-            }
+                result[i] = Mathf.Pow(colorDiff[i], Mathf.Max(1f - featureDiff[i], 0.001f));
 
-            return (float)(sum / pxO.Length);
+            return result;
         }
 
         static Vector3 SrgbToYCxCz(Color c)
@@ -80,14 +80,18 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             float X = 0.4124564f * r + 0.3575761f * g + 0.1804375f * b;
             float Y = 0.2126729f * r + 0.7151522f * g + 0.0721750f * b;
             float Z = 0.0193339f * r + 0.1191920f * g + 0.9503041f * b;
-            float Yy = 116f * Y - 16f;
-            float Cx = 500f * (X - Y);
-            float Cz = 200f * (Y - Z);
-            // Hunt adjustment
+            float fX = LabF(X / 0.95047f);
+            float fY = LabF(Y);
+            float fZ = LabF(Z / 1.08883f);
+            float Yy = 116f * fY - 16f;
+            float Cx = 500f * (fX - fY);
+            float Cz = 200f * (fY - fZ);
             Cx += 0.01f * Yy * Cx;
             Cz += 0.01f * Yy * Cz;
             return new Vector3(Yy, Cx, Cz);
         }
+
+        static float LabF(float t) => t > 0.008856f ? Mathf.Pow(t, 1f / 3f) : 7.787f * t + 16f / 116f;
 
         static float SrgbToLin(float v) => v <= 0.04045f ? v / 12.92f : Mathf.Pow((v + 0.055f) / 1.055f, 2.4f);
 
