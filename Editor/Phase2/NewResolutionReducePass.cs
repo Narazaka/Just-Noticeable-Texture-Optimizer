@@ -212,6 +212,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                         PersistentCache.Store(cacheKey, new CachedTextureResult
                         {
                             FinalSize = result.Size,
+                            FinalWidth = result.Width,
+                            FinalHeight = result.Height,
                             FinalFormatName = result.Format.ToString(),
                             CompressedRawBytes = result.Final.GetRawTextureData(),
                         }, settings.CacheMode);
@@ -248,12 +250,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
         static Texture2D RestoreFromRaw(Texture2D orig, CachedTextureResult cached)
         {
             if (!System.Enum.TryParse<TextureFormat>(cached.FinalFormatName, out var fmt)) return null;
+            // バグ#11 回帰防止: 非正方形テクスチャの W/H を別々に復元。
+            // レガシー cache (FinalWidth/Height=0) は TryLoad 側で FinalSize から補完済みだが、
+            // 念のためここでも fallback。
+            int w = cached.FinalWidth > 0 ? cached.FinalWidth : cached.FinalSize;
+            int h = cached.FinalHeight > 0 ? cached.FinalHeight : cached.FinalSize;
             try
             {
-                var t = new Texture2D(cached.FinalSize, cached.FinalSize, fmt, true);
+                var t = new Texture2D(w, h, fmt, true);
                 t.name = orig.name + "_cached";
                 t.LoadRawTextureData(cached.CompressedRawBytes);
-                t.Apply();
+                t.Apply(updateMipmaps: false);  // raw bytes は既に mipchain を含む
                 return t;
             }
             catch

@@ -12,7 +12,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
     public class NewPhase2Result
     {
         public Texture2D Final;
-        public int Size;
+        public int Size;    // backward compat (= max(Width, Height))
+        public int Width;   // バグ#11 回帰防止: 非正方形対応
+        public int Height;
         public TextureFormat Format;
         public GateVerdict FinalVerdict;
         public string DecisionReason;
@@ -81,6 +83,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 {
                     Final = orig,
                     Size = origSize,
+                    Width = orig.width,
+                    Height = orig.height,
                     Format = orig.format,
                     FinalVerdict = new GateVerdict { Pass = false, TextureScore = 0f, WorstTileIndex = -1, DominantMetric = null, DominantMipLevel = -1 },
                     DecisionReason = "skipped: no tile coverage (cannot evaluate)",
@@ -180,7 +184,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             return new NewPhase2Result
             {
                 Final = final,
-                Size = finalSize,
+                Size = Mathf.Max(final.width, final.height),
+                Width = final.width,
+                Height = final.height,
                 Format = finalFmt,
                 FinalVerdict = finalVerdict,
                 DecisionReason = reason,
@@ -264,7 +270,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         {
             switch (role)
             {
-                case TextureRole.SingleChannel: return TextureFormat.R8;
+                // バグ#5 回帰防止: SingleChannel は BC4 (lightweight) でほぼロスレス。
+                // それでも fail するならサイズ縮小に頼る方が容量効率が良いので BC7 にする。
+                // R8 (非圧縮 8bpp) は BC4 (4bpp) より大きく、fallback として論外。
+                case TextureRole.SingleChannel: return TextureFormat.BC7;
                 default: return TextureFormat.BC7;
             }
         }

@@ -7,7 +7,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Cache
     [Serializable]
     public class CachedTextureResult
     {
-        public int FinalSize;
+        public int FinalSize;          // backward compat: 旧フォーマット (= max(W, H))
+        public int FinalWidth;         // バグ#11 回帰防止: 非正方形テクスチャの W/H を別々に保持
+        public int FinalHeight;
         public string FinalFormatName; // TextureFormat enum string
         public byte[] CompressedRawBytes;
     }
@@ -27,6 +29,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Cache
                 var json = File.ReadAllText(metaPath);
                 var r = JsonUtility.FromJson<CachedTextureResult>(json);
                 if (r == null) return null;
+
+                // バグ#11 回帰防止: レガシー cache (FinalWidth/Height 未書込) は square と仮定して補完
+                if (r.FinalWidth == 0 && r.FinalHeight == 0 && r.FinalSize > 0)
+                {
+                    r.FinalWidth = r.FinalSize;
+                    r.FinalHeight = r.FinalSize;
+                }
 
                 if (mode == CacheMode.Full
                     && !string.IsNullOrEmpty(r.FinalFormatName)
