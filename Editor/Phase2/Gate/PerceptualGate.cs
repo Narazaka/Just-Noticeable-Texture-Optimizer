@@ -68,5 +68,52 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
                     : -1,
             };
         }
+
+        public GateVerdict EvaluateDebug(
+            RenderTexture orig, RenderTexture candidate,
+            UvTileGrid grid, float[] rPerTile,
+            QualityPreset preset, IReadOnlyList<IMetric> metrics,
+            out float[][] perMetricScores, out string[] metricNames)
+        {
+            int tileCount = grid.Tiles.Length;
+            perMetricScores = new float[metrics.Count][];
+            metricNames = new string[metrics.Count];
+            for (int i = 0; i < metrics.Count; i++)
+            {
+                perMetricScores[i] = new float[tileCount];
+                metricNames[i] = metrics[i].Name;
+                metrics[i].Evaluate(orig, candidate, grid, rPerTile, _calib, perMetricScores[i]);
+            }
+
+            var accum = new float[tileCount];
+            var dominant = new string[tileCount];
+            for (int m = 0; m < metrics.Count; m++)
+            {
+                var tmp = perMetricScores[m];
+                for (int i = 0; i < tileCount; i++)
+                {
+                    if (tmp[i] > accum[i]) { accum[i] = tmp[i]; dominant[i] = metricNames[m]; }
+                }
+            }
+
+            float texMax = 0f;
+            int worstIdx = -1;
+            for (int i = 0; i < tileCount; i++)
+            {
+                if (!grid.Tiles[i].HasCoverage) continue;
+                if (accum[i] > texMax) { texMax = accum[i]; worstIdx = i; }
+            }
+
+            return new GateVerdict
+            {
+                Pass = texMax < _calib.GetThreshold(preset),
+                TextureScore = texMax,
+                WorstTileIndex = worstIdx,
+                DominantMetric = worstIdx >= 0 ? dominant[worstIdx] : null,
+                DominantMipLevel = worstIdx >= 0
+                    ? EffectiveResolutionCalculator.LevelFromR(rPerTile[worstIdx], grid.TileSize)
+                    : -1,
+            };
+        }
     }
 }

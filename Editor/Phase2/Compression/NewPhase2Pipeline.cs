@@ -83,6 +83,32 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 }
             });
 
+            // Debug dump (final size 確定後の downscale verdict のみ)
+            if (!string.IsNullOrEmpty(settings.DebugDumpPath))
+            {
+                int dumpSize = finalSize;
+                var dumpRt = PyramidBuilder.CreatePyramid(origCtx.Original, dumpSize, dumpSize, "Jnto_Final_Dbg");
+                try
+                {
+                    var debugVerdict = _gate.EvaluateDebug(
+                        origCtx.Original, dumpRt, grid, rPerTile,
+                        settings.Preset, _downscaleMetrics,
+                        out var perMetric, out var names);
+                    Reporting.DebugDump.DumpTileScores(
+                        settings.DebugDumpPath, orig.name, grid, perMetric, names);
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        Reporting.DebugDump.DumpHeatmapPng(
+                            settings.DebugDumpPath, orig.name, names[i], grid, perMetric[i]);
+                    }
+                }
+                finally
+                {
+                    dumpRt.Release();
+                    Object.DestroyImmediate(dumpRt);
+                }
+            }
+
             var lightweight = FormatPredictor.PredictLightweight(origStats, role, settings.Preset);
             TextureFormat finalFmt = ChooseFormat(orig, origCtx, grid, rPerTile, settings, role,
                                                   finalSize, lightweight,
