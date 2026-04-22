@@ -1,0 +1,91 @@
+#pragma kernel CSMain
+
+Texture2D<float4> _Source;
+SamplerState sampler_Source;
+int _Width;
+int _Height;
+int _BlocksX;
+int _BlocksY;
+
+// output: 6 floats per block (planarity, nonlinearity, alphaNonlinearity, meanR, meanG, meanB)
+RWStructuredBuffer<float> _Stats;
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    int bx = (int)id.x;
+    int by = (int)id.y;
+    if (bx >= _BlocksX || by >= _BlocksY) return;
+
+    float3 sumRgb = 0;
+    float sumA = 0;
+    float3 colors[16];
+    float alphas[16];
+    int n = 0;
+    for (int dy = 0; dy < 4; dy++)
+    for (int dx = 0; dx < 4; dx++)
+    {
+        int x = bx * 4 + dx;
+        int y = by * 4 + dy;
+        if (x >= _Width || y >= _Height) continue;
+        float2 uv = (float2(x, y) + 0.5) / float2(_Width, _Height);
+        float4 c = _Source.SampleLevel(sampler_Source, uv, 0);
+        colors[n] = c.rgb;
+        alphas[n] = c.a;
+        sumRgb += c.rgb;
+        sumA += c.a;
+        n++;
+    }
+    if (n == 0) return;
+
+    float3 meanRgb = sumRgb / (float)n;
+    float meanA = sumA / (float)n;
+
+    float cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0;
+    float alphaVar = 0;
+    for (int i = 0; i < n; i++)
+    {
+        float3 d = colors[i] - meanRgb;
+        cxx += d.x * d.x; cxy += d.x * d.y; cxz += d.x * d.z;
+        cyy += d.y * d.y; cyz += d.y * d.z; czz += d.z * d.z;
+        alphaVar += (alphas[i] - meanA) * (alphas[i] - meanA);
+    }
+    cxx /= n; cxy /= n; cxz /= n; cyy /= n; cyz /= n; czz /= n;
+    alphaVar /= n;
+
+    // Power iteration for largest eigenvalue
+    float3 v = float3(1, 1, 1);
+    [unroll] for (int it = 0; it < 8; it++)
+    {
+        float3 mv = float3(
+            cxx * v.x + cxy * v.y + cxz * v.z,
+            cxy * v.x + cyy * v.y + cyz * v.z,
+            cxz * v.x + cyz * v.y + czz * v.z);
+        float mag = length(mv);
+        if (mag > 1e-6) v = mv / mag;
+    }
+    float lambda1 = dot(v, float3(
+        cxx * v.x + cxy * v.y + cxz * v.z,
+        cxy * v.x + cyy * v.y + cyz * v.z,
+        cxz * v.x + cyz * v.y + czz * v.z));
+
+    float trace = cxx + cyy + czz;
+    float lambda_rest = max(0.0, trace - lambda1);
+    float planarity = trace > 1e-6 ? lambda_rest / trace : 0.0;
+
+    // Smallest eigenvalue (3rd) approximation via det/sum_of_2x2_minors
+    float det = cxx * (cyy * czz - cyz * cyz)
+              - cxy * (cxy * czz - cyz * cxz)
+              + cxz * (cxy * cyz - cyy * cxz);
+    float minorSum = max(cxx * cyy + cyy * czz + cxx * czz - cxy * cxy - cyz * cyz - cxz * cxz, 1e-6);
+    float lambda3_est = trace > 1e-6 ? max(0.0, det / minorSum) : 0.0;
+    float nonlinearity = trace > 1e-6 ? lambda3_est / trace : 0.0;
+
+    int o = (by * _BlocksX + bx) * 6;
+    _Stats[o + 0] = planarity;
+    _Stats[o + 1] = nonlinearity;
+    _Stats[o + 2] = alphaVar;
+    _Stats[o + 3] = meanRgb.r;
+    _Stats[o + 4] = meanRgb.g;
+    _Stats[o + 5] = meanRgb.b;
+}
