@@ -1,0 +1,94 @@
+#pragma kernel CSEvaluate
+
+Texture2D<float4> _Orig;
+SamplerState sampler_Orig;
+Texture2D<float4> _Candidate;
+SamplerState sampler_Candidate;
+
+RWStructuredBuffer<float> _Scores;
+StructuredBuffer<float> _RPerTile;
+
+int _TilesX;
+int _TilesY;
+int _TileSize;
+int _TextureWidth;
+int _TextureHeight;
+float _RidgeScale;
+
+float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+float ridgeness(Texture2D<float4> tex, SamplerState s, float2 uv, float pxW, float pxH, float mip)
+{
+    float2 dx = float2(pxW, 0);
+    float2 dy = float2(0, pxH);
+    float c  = lum(tex.SampleLevel(s, uv, mip).rgb);
+    float l  = lum(tex.SampleLevel(s, uv - dx, mip).rgb);
+    float r  = lum(tex.SampleLevel(s, uv + dx, mip).rgb);
+    float u  = lum(tex.SampleLevel(s, uv - dy, mip).rgb);
+    float d  = lum(tex.SampleLevel(s, uv + dy, mip).rgb);
+    float ul = lum(tex.SampleLevel(s, uv - dx - dy, mip).rgb);
+    float ur = lum(tex.SampleLevel(s, uv + dx - dy, mip).rgb);
+    float dl = lum(tex.SampleLevel(s, uv - dx + dy, mip).rgb);
+    float dr = lum(tex.SampleLevel(s, uv + dx + dy, mip).rgb);
+
+    float Ixx = r - 2.0 * c + l;
+    float Iyy = d - 2.0 * c + u;
+    float Ixy = 0.25 * (dr - ur - dl + ul);
+
+    float tr = Ixx + Iyy;
+    float det = Ixx * Iyy - Ixy * Ixy;
+    float disc = sqrt(max(0.0, tr * tr * 0.25 - det));
+    float lambda1 = tr * 0.5 + disc;
+    float lambda2 = tr * 0.5 - disc;
+
+    float a1 = abs(lambda1), a2 = abs(lambda2);
+    if (a2 > a1) { float t = a1; a1 = a2; a2 = t; }
+
+    float ratio = a1 > 1e-6 ? (a2 / a1) : 0.0;
+    return a1 * saturate(1.0 - ratio);
+}
+
+[numthreads(8, 8, 1)]
+void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
+{
+    int tx = (int)gid.x;
+    int ty = (int)gid.y;
+    if (tx >= _TilesX || ty >= _TilesY) return;
+    if (gtid.x != 0 || gtid.y != 0) return;
+
+    int tileIdx = ty * _TilesX + tx;
+    float r = _RPerTile[tileIdx];
+    if (r <= 0.0)
+    {
+        _Scores[tileIdx] = 0.0;
+        return;
+    }
+
+    float ratio = (float)_TileSize / max(r, 1e-3);
+    int targetLv = (int)floor(log2(ratio));
+
+    float2 tileUvMin = float2(tx, ty) / float2(_TilesX, _TilesY);
+    float2 tileUvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
+
+    const int N = 6;
+    float pxW = 1.0 / (float)_TextureWidth;
+    float pxH = 1.0 / (float)_TextureHeight;
+
+    float sumO = 0.0, sumC = 0.0, sumDiff = 0.0;
+    int count = 0;
+    for (int sy = 0; sy < N; sy++)
+    for (int sx = 0; sx < N; sx++)
+    {
+        float2 local = (float2(sx, sy) + 0.5) / (float)N;
+        float2 uv = lerp(tileUvMin, tileUvMax, local);
+        float rO = ridgeness(_Orig, sampler_Orig, uv, pxW, pxH, (float)targetLv);
+        float rC = ridgeness(_Candidate, sampler_Candidate, uv, pxW, pxH, (float)targetLv);
+        sumO += rO;
+        sumC += rC;
+        sumDiff += abs(rO - rC);
+        count++;
+    }
+
+    float loss = sumO > 1e-6 ? saturate(sumDiff / sumO) : 0.0;
+    _Scores[tileIdx] = loss * _RidgeScale;
+}
