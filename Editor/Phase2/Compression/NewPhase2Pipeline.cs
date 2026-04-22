@@ -65,6 +65,26 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int origSize = Mathf.Max(orig.width, orig.height);
+
+            int coveredCount = 0;
+            for (int i = 0; i < grid.Tiles.Length; i++)
+                if (grid.Tiles[i].HasCoverage && rPerTile[i] > 0f) coveredCount++;
+
+            if (coveredCount == 0)
+            {
+                sw.Stop();
+                UnityEngine.Debug.Log($"[JNTO/pipeline] {orig.name}: no tile coverage, keeping original");
+                return new NewPhase2Result
+                {
+                    Final = orig,
+                    Size = origSize,
+                    Format = orig.format,
+                    FinalVerdict = new GateVerdict { Pass = false, TextureScore = 0f, WorstTileIndex = -1, DominantMetric = null, DominantMipLevel = -1 },
+                    DecisionReason = "skipped: no tile coverage (cannot evaluate)",
+                    ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
+                };
+            }
+
             int minSize = DensityCalculator.MinSize;
 
             int finalSize;

@@ -148,6 +148,24 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                         settings.HMDPixelsPerDegree, settings.Preset);
                 }
 
+                int coveredTileCount = 0;
+                int rNonZeroCount = 0;
+                for (int i = 0; i < grid.Tiles.Length; i++)
+                {
+                    if (grid.Tiles[i].HasCoverage) coveredTileCount++;
+                    if (rPerTile[i] > 0f) rNonZeroCount++;
+                }
+                UnityEngine.Debug.Log(
+                    $"[JNTO/grid] {tex.name}: tiles={grid.Tiles.Length} ({grid.TilesX}x{grid.TilesY}, ts={grid.TileSize}), " +
+                    $"covered={coveredTileCount}, rNonZero={rNonZeroCount}, role={role}, refs={refs.Count}");
+
+                // 早期スキップ: 評価不能なら処理対象外
+                if (rNonZeroCount == 0)
+                {
+                    UnityEngine.Debug.LogWarning($"[JNTO/grid] {tex.name}: skipped (no evaluable tiles)");
+                    return;
+                }
+
                 // GPU context + block stats (cached per build)
                 if (!cache.Contexts.TryGetValue(tex, out var gpuCtx))
                 {

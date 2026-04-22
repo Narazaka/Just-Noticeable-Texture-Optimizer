@@ -56,9 +56,11 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
 
             float texMax = 0f;
             int worstIdx = -1;
+            bool hasCovered = false;
             for (int i = 0; i < tileCount; i++)
             {
                 if (!grid.Tiles[i].HasCoverage) continue;
+                hasCovered = true;
                 if (accum[i] > texMax)
                 {
                     texMax = accum[i];
@@ -68,7 +70,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
 
             return new GateVerdict
             {
-                Pass = texMax < threshold,
+                Pass = hasCovered && texMax < threshold,
                 TextureScore = texMax,
                 WorstTileIndex = worstIdx,
                 DominantMetric = worstIdx >= 0 ? dominant[worstIdx] : null,
@@ -115,15 +117,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
 
             float texMax = 0f;
             int worstIdx = -1;
+            bool hasCovered = false;
             for (int i = 0; i < tileCount; i++)
             {
                 if (!grid.Tiles[i].HasCoverage) continue;
+                hasCovered = true;
                 if (accum[i] > texMax) { texMax = accum[i]; worstIdx = i; }
             }
 
             return new GateVerdict
             {
-                Pass = texMax < _calib.GetThreshold(preset),
+                Pass = hasCovered && texMax < _calib.GetThreshold(preset),
                 TextureScore = texMax,
                 WorstTileIndex = worstIdx,
                 DominantMetric = worstIdx >= 0 ? dominant[worstIdx] : null,

@@ -7,6 +7,7 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 using Narazaka.VRChat.Jnto.Editor.Resolution;
+using Narazaka.VRChat.Jnto.Editor.Tests.Fixtures;
 
 public class NewPhase2PipelineTests
 {
@@ -92,6 +93,41 @@ public class NewPhase2PipelineTests
         {
             Object.DestroyImmediate(t);
         }
+    }
+
+    [Test]
+    public void Find_WithEmptyTileCoverage_ReturnsOriginal()
+    {
+        var t = TestTextureFactory.MakeCheckerboard(256, 256);
+        try
+        {
+            var grid = TestGridFactory.Empty(256, 256);
+            var r = TestGridFactory.ZeroR(grid);
+
+            var calib = DegradationCalibration.Default();
+            var settings = new ResolvedSettings
+            {
+                Preset = QualityPreset.Medium,
+                EncodePolicy = EncodePolicy.Safe,
+                CacheMode = CacheMode.Full,
+            };
+
+            using (var ctx = GpuTextureContext.FromTexture2D(t))
+            {
+                var stats = BlockStatsComputer.Compute(ctx.Original, 256, 256);
+                var pipeline = new NewPhase2Pipeline(calib, TextureRole.ColorOpaque);
+                var result = pipeline.Find(t, ctx, grid, r,
+                    TextureRole.ColorOpaque, settings, stats);
+
+                Assert.IsNotNull(result);
+                // 評価不能 → 縮小しない (orig 維持)
+                Assert.AreEqual(256, result.Size,
+                    "no tile coverage → must keep original size, never shrink");
+                if (result.Final != t) Object.DestroyImmediate(result.Final);
+            }
+            Object.DestroyImmediate(calib);
+        }
+        finally { Object.DestroyImmediate(t); }
     }
 
     static Texture2D MakeCheckerboard(int n)
