@@ -21,6 +21,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
     {
         protected override void Execute(BuildContext ctx)
         {
+            Reporting.DecisionLog.Clear();
             var root = ctx.AvatarRootObject;
             if (root.GetComponentInChildren<TextureOptimizer>(true) == null) return;
 
@@ -93,6 +94,25 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 {
                     ObjectRegistry.RegisterReplacedObject(tex, restored);
                     replaced[tex] = restored;
+                    if (System.Enum.TryParse<TextureFormat>(cached.FinalFormatName, out var cfmt))
+                    {
+                        Reporting.DecisionLog.Add(new Reporting.DecisionRecord
+                        {
+                            OriginalTexture = tex,
+                            OrigSize = Mathf.Max(tex.width, tex.height),
+                            FinalSize = cached.FinalSize,
+                            OrigFormat = tex.format,
+                            FinalFormat = cfmt,
+                            SavedBytes = EstimateSavedBytesRaw(tex, cached.FinalSize, cfmt),
+                            TextureScore = 0f,
+                            DominantMetric = "-",
+                            DominantMipLevel = -1,
+                            WorstTileIndex = -1,
+                            CacheHit = true,
+                            ProcessingMs = 0f,
+                            Reason = "cache hit",
+                        });
+                    }
                     return;
                 }
             }
@@ -140,6 +160,23 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     FinalFormatName = result.Format.ToString(),
                     CompressedRawBytes = result.Final.GetRawTextureData(),
                 }, settings.CacheMode);
+
+                Reporting.DecisionLog.Add(new Reporting.DecisionRecord
+                {
+                    OriginalTexture = tex,
+                    OrigSize = Mathf.Max(tex.width, tex.height),
+                    FinalSize = result.Size,
+                    OrigFormat = tex.format,
+                    FinalFormat = result.Format,
+                    SavedBytes = EstimateSavedBytes(tex, result),
+                    TextureScore = result.FinalVerdict.TextureScore,
+                    DominantMetric = result.FinalVerdict.DominantMetric ?? "-",
+                    DominantMipLevel = result.FinalVerdict.DominantMipLevel,
+                    WorstTileIndex = result.FinalVerdict.WorstTileIndex,
+                    CacheHit = false,
+                    ProcessingMs = result.ProcessingMs,
+                    Reason = result.DecisionReason,
+                });
             }
         }
 
@@ -178,6 +215,31 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             var cloneMap = new Dictionary<Material, Material>();
             Shared.MaterialCloner.ReplaceOnRenderers(root, cloneMap, m => affectedMats.Contains(m));
             Phase1.AlphaStripPass.SafeSetTextures(root, cloneMap, replaced);
+        }
+
+        static long EstimateSavedBytes(Texture2D orig, NewPhase2Result r)
+        {
+            long origBytes = BytesFor(orig.width, orig.height, orig.format);
+            long newBytes = BytesFor(r.Size, r.Size, r.Format);
+            return origBytes - newBytes;
+        }
+
+        static long EstimateSavedBytesRaw(Texture2D orig, int finalSize, TextureFormat finalFmt)
+        {
+            long origBytes = BytesFor(orig.width, orig.height, orig.format);
+            long newBytes = BytesFor(finalSize, finalSize, finalFmt);
+            return origBytes - newBytes;
+        }
+
+        static long BytesFor(int w, int h, TextureFormat fmt)
+        {
+            int bpp = fmt == TextureFormat.DXT1 ? 4
+                    : fmt == TextureFormat.DXT5 ? 8
+                    : fmt == TextureFormat.BC5 || fmt == TextureFormat.BC7 ? 8
+                    : fmt == TextureFormat.BC4 ? 4
+                    : 32;
+            long mipped = (long)w * h * bpp / 8;
+            return (long)(mipped * 1.33f);
         }
 
         static Mesh GetMesh(Renderer renderer)
