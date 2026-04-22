@@ -32,6 +32,16 @@ public class HighFrequencyMetricTests
         Assert.Less(s, 0.5f, "Small noise on high-detail texture should not score high");
     }
 
+    [Test]
+    public void MediumScaleBlur_Detected()
+    {
+        var a = MakeStripes(128, 8);
+        var b = HeavyBlur(a);
+        var m = new HighFrequencyMetric();
+        float s = m.Evaluate(a, b);
+        Assert.Greater(s, 0.1f, "Multi-scale metric should detect medium-frequency pattern loss");
+    }
+
     static Texture2D MakeCheckerboard(int n)
     {
         var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
@@ -68,6 +78,22 @@ public class HighFrequencyMetricTests
         }
         var dst = new Texture2D(w, h, TextureFormat.RGBA32, false);
         dst.SetPixels(q); dst.Apply(); return dst;
+    }
+
+    static Texture2D MakeStripes(int n, int period)
+    {
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        var px = new Color[n * n];
+        for (int y = 0; y < n; y++) for (int x = 0; x < n; x++)
+            px[y * n + x] = (x / period) % 2 == 0 ? Color.black : Color.white;
+        t.SetPixels(px); t.Apply(); return t;
+    }
+
+    static Texture2D HeavyBlur(Texture2D src)
+    {
+        var result = src;
+        for (int i = 0; i < 5; i++) result = Blur(result);
+        return result;
     }
 
     static Texture2D AddNoise(Texture2D src, float amount)

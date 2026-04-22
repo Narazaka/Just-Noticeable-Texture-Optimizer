@@ -69,6 +69,20 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             return map;
         }
 
+        public static TexelDensityMap ResizeTo(TexelDensityMap src, int newW, int newH)
+        {
+            if (src == null) return null;
+            var result = new TexelDensityMap { Width = newW, Height = newH, Density = new float[newW * newH] };
+            for (int y = 0; y < newH; y++)
+                for (int x = 0; x < newW; x++)
+                {
+                    int sx = Mathf.Clamp(x * src.Width / newW, 0, src.Width - 1);
+                    int sy = Mathf.Clamp(y * src.Height / newH, 0, src.Height - 1);
+                    result.Density[y * newW + x] = src.Density[sy * src.Width + sx];
+                }
+            return result;
+        }
+
         public static TexelDensityMap Merge(TexelDensityMap a, TexelDensityMap b)
         {
             if (a == null) return b;

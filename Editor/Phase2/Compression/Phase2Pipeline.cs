@@ -35,6 +35,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 if (result != null) return result;
             }
 
+            _gate.Cleanup();
             return new Phase2Result { Final = original, Size = origMax, Format = origFmt };
         }
 
@@ -43,23 +44,30 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         {
             for (int size = targetSize; size < origMax; size *= 2)
             {
-                var resized = ResolutionReducer.Resize(original, size);
+                var reference = ResolutionReducer.Resize(original, size);
+
+                if (!_gate.PassesDownscale(original, reference, role, preset, densityMap, out _))
+                {
+                    Object.DestroyImmediate(reference);
+                    continue;
+                }
 
                 foreach (var fmt in fmts)
                 {
-                    var decoded = TextureEncodeDecode.EncodeAndDecode(resized, fmt);
-                    bool pass = _gate.Passes(original, decoded, role, preset, densityMap, out _);
-                    Object.DestroyImmediate(decoded);
+                    var candidate = TextureEncodeDecode.EncodeAndDecode(reference, fmt);
+                    bool pass = _gate.PassesCompression(reference, candidate, role, preset, densityMap, out _);
+                    Object.DestroyImmediate(candidate);
 
                     if (pass)
                     {
-                        var final = CreateCompressed(resized, fmt);
-                        Object.DestroyImmediate(resized);
+                        var final = CreateCompressed(reference, fmt);
+                        Object.DestroyImmediate(reference);
+                        _gate.Cleanup();
                         return new Phase2Result { Final = final, Size = size, Format = fmt };
                     }
                 }
 
-                Object.DestroyImmediate(resized);
+                Object.DestroyImmediate(reference);
             }
             return null;
         }

@@ -13,6 +13,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             ["NormalVariance"] = Preset(0.30f, 0.20f, 0.15f, 0.08f),
             ["HighFrequency"] = Preset(0.40f, 0.30f, 0.20f, 0.10f),
             ["Banding"] = Preset(0.50f, 0.35f, 0.25f, 0.15f),
+            ["BlockBoundary"] = Preset(0.50f, 0.35f, 0.25f, 0.15f),
             ["SSIM"] = Preset(0.15f, 0.10f, 0.06f, 0.03f),
         };
 

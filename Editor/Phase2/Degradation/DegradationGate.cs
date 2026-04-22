@@ -7,40 +7,33 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
 {
     public class DegradationGate
     {
-        public bool Passes(
-            Texture2D original, Texture2D candidate,
-            TextureRole role, QualityPreset preset,
-            TexelDensityMap densityMap,
+        Texture2D _cachedReadable;
+        int _cachedOriginalId = -1;
+
+        public bool PassesDownscale(Texture2D original, Texture2D reference,
+            TextureRole role, QualityPreset preset, TexelDensityMap densityMap,
             out string failedMetric)
         {
-            Texture2D evalOriginal = original;
-            Texture2D evalCandidate = candidate;
-            bool destroyOriginal = false;
-            bool destroyCandidate = false;
-
-            if (!original.isReadable)
+            int origMax = Mathf.Max(original.width, original.height);
+            int refMax = Mathf.Max(reference.width, reference.height);
+            if (refMax >= origMax)
             {
-                evalOriginal = MakeReadable(original);
-                destroyOriginal = true;
+                failedMetric = null;
+                return true;
             }
 
-            if (candidate.width != evalOriginal.width || candidate.height != evalOriginal.height)
-            {
-                int maxDim = Mathf.Max(evalOriginal.width, evalOriginal.height);
-                evalCandidate = ResolutionReducer.Resize(candidate, maxDim);
-                destroyCandidate = true;
-            }
-
+            var readable = GetReadable(original);
+            var upscaled = ResolutionReducer.Resize(reference, origMax);
             try
             {
-                var metrics = MetricsFor(role);
+                var metrics = DownscaleMetricsFor(role);
                 foreach (var m in metrics)
                 {
                     float s;
                     if (densityMap != null && m is IPerPixelMetric perPixel)
-                        s = EvaluateDensityWeighted(perPixel, evalOriginal, evalCandidate, densityMap);
+                        s = EvaluateDensityWeighted(perPixel, readable, upscaled, densityMap);
                     else
-                        s = m.Evaluate(evalOriginal, evalCandidate);
+                        s = m.Evaluate(readable, upscaled);
 
                     if (!DegradationThresholds.MaxScore.TryGetValue(m.Name, out var presetMap))
                         continue;
@@ -53,26 +46,72 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             }
             finally
             {
-                if (destroyCandidate) Object.DestroyImmediate(evalCandidate);
-                if (destroyOriginal) Object.DestroyImmediate(evalOriginal);
+                Object.DestroyImmediate(upscaled);
             }
 
             failedMetric = null;
             return true;
         }
 
-        static Texture2D MakeReadable(Texture2D src)
+        public bool PassesCompression(Texture2D reference, Texture2D candidate,
+            TextureRole role, QualityPreset preset, TexelDensityMap densityMap,
+            out string failedMetric)
         {
-            var rt = RenderTexture.GetTemporary(src.width, src.height, 0, RenderTextureFormat.ARGB32);
-            Graphics.Blit(src, rt);
+            TexelDensityMap evalMap = densityMap;
+            if (densityMap != null && (densityMap.Width != reference.width || densityMap.Height != reference.height))
+                evalMap = TexelDensityMap.ResizeTo(densityMap, reference.width, reference.height);
+
+            var metrics = CompressionMetricsFor(role);
+            foreach (var m in metrics)
+            {
+                float s;
+                if (evalMap != null && m is IPerPixelMetric perPixel)
+                    s = EvaluateDensityWeighted(perPixel, reference, candidate, evalMap);
+                else
+                    s = m.Evaluate(reference, candidate);
+
+                if (!DegradationThresholds.MaxScore.TryGetValue(m.Name, out var presetMap))
+                    continue;
+                if (s > presetMap[preset])
+                {
+                    failedMetric = m.Name;
+                    return false;
+                }
+            }
+
+            failedMetric = null;
+            return true;
+        }
+
+        public void Cleanup()
+        {
+            if (_cachedReadable != null)
+            {
+                Object.DestroyImmediate(_cachedReadable);
+                _cachedReadable = null;
+                _cachedOriginalId = -1;
+            }
+        }
+
+        Texture2D GetReadable(Texture2D original)
+        {
+            if (original.isReadable) return original;
+            int id = original.GetInstanceID();
+            if (_cachedReadable != null && _cachedOriginalId == id) return _cachedReadable;
+
+            if (_cachedReadable != null) Object.DestroyImmediate(_cachedReadable);
+
+            var rt = RenderTexture.GetTemporary(original.width, original.height, 0, RenderTextureFormat.ARGB32);
+            Graphics.Blit(original, rt);
             var prev = RenderTexture.active;
             RenderTexture.active = rt;
-            var dst = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
-            dst.ReadPixels(new Rect(0, 0, src.width, src.height), 0, 0);
-            dst.Apply();
+            _cachedReadable = new Texture2D(original.width, original.height, TextureFormat.RGBA32, false);
+            _cachedReadable.ReadPixels(new Rect(0, 0, original.width, original.height), 0, 0);
+            _cachedReadable.Apply();
             RenderTexture.active = prev;
             RenderTexture.ReleaseTemporary(rt);
-            return dst;
+            _cachedOriginalId = id;
+            return _cachedReadable;
         }
 
         static float EvaluateDensityWeighted(IPerPixelMetric metric, Texture2D original, Texture2D candidate, TexelDensityMap densityMap)
@@ -100,7 +139,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
             return weighted[p99idx];
         }
 
-        static List<IDegradationMetric> MetricsFor(TextureRole role)
+        static List<IDegradationMetric> DownscaleMetricsFor(TextureRole role)
         {
             switch (role)
             {
@@ -110,35 +149,35 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Degradation
                         new NormalAngleMetric(),
                         new NormalVarianceMetric(),
                     };
-                case TextureRole.ColorOpaque:
+                default:
                     return new List<IDegradationMetric>
                     {
-                        new FlipMetric(),
-                        new BandingMetric(),
+                        new HighFrequencyMetric(),
+                    };
+            }
+        }
+
+        static List<IDegradationMetric> CompressionMetricsFor(TextureRole role)
+        {
+            switch (role)
+            {
+                case TextureRole.NormalMap:
+                    return new List<IDegradationMetric>
+                    {
+                        new NormalAngleMetric(),
                     };
                 case TextureRole.ColorAlpha:
                     return new List<IDegradationMetric>
                     {
-                        new FlipMetric(),
+                        new BandingMetric(),
+                        new BlockBoundaryMetric(),
                         new AlphaQuantizationMetric(),
-                        new BandingMetric(),
-                    };
-                case TextureRole.SingleChannel:
-                    return new List<IDegradationMetric>
-                    {
-                        new SsimMetric(),
-                        new BandingMetric(),
-                    };
-                case TextureRole.MatCapOrLut:
-                    return new List<IDegradationMetric>
-                    {
-                        new ChromaDriftMetric(),
-                        new BandingMetric(),
                     };
                 default:
                     return new List<IDegradationMetric>
                     {
-                        new FlipMetric(),
+                        new BandingMetric(),
+                        new BlockBoundaryMetric(),
                     };
             }
         }
