@@ -79,23 +79,28 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 if (settings == null) return;
 
                 bool alphaUsed = false;
+                ShaderUsage aggregatedUsage = ShaderUsage.Color;
                 Material repMat = null; string repProp = null;
                 foreach (var r in refs)
                 {
-                    if (r.Material != null && LilTexAlphaUsageAnalyzer.IsAlphaUsed(r.Material, r.PropertyName))
-                    {
+                    if (r.Material == null) continue;
+
+                    if (LilTexAlphaUsageAnalyzer.IsAlphaUsed(r.Material, r.PropertyName))
                         alphaUsed = true;
-                        repMat = r.Material;
-                        repProp = r.PropertyName;
-                        break;
-                    }
-                    if (repMat == null && r.Material != null)
+
+                    var refUsage = ShaderUsageInferrer.Infer(r.Material, r.PropertyName, tex);
+                    if (refUsage == ShaderUsage.Normal)
+                        aggregatedUsage = ShaderUsage.Normal;
+                    else if (refUsage == ShaderUsage.SingleChannel && aggregatedUsage != ShaderUsage.Normal)
+                        aggregatedUsage = ShaderUsage.SingleChannel;
+
+                    if (repMat == null)
                     {
                         repMat = r.Material;
                         repProp = r.PropertyName;
                     }
                 }
-                var usage = ShaderUsageInferrer.Infer(repMat, repProp, tex);
+                var usage = aggregatedUsage;
                 // role は cache key とバグ#2 (linear/sRGB RT 選択) のために導出する。
                 var role = UsageToRole(usage, alphaUsed, tex.format);
                 bool isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
