@@ -82,4 +82,39 @@ public class BuildMetricsTests
         }
         finally { Object.DestroyImmediate(calib); }
     }
+
+    [Test]
+    public void Pipeline_ExplicitIsLinear_OverridesUsageDerivation()
+    {
+        // Color usage but explicit isLinear=true — the pipeline must take the explicit value.
+        // Reachable via reflection of the _isLinear private field.
+        var calib = DegradationCalibration.Default();
+        try
+        {
+            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
+                enableChromaDrift: true, origFormat: TextureFormat.RGBA32, isLinear: true);
+            var f = typeof(NewPhase2Pipeline).GetField("_isLinear",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(f, "_isLinear field must exist");
+            Assert.IsTrue((bool)f.GetValue(pipeline),
+                "explicit isLinear=true must override Color-usage default (=false)");
+        }
+        finally { Object.DestroyImmediate(calib); }
+    }
+
+    [Test]
+    public void Pipeline_NullIsLinear_FallsBackToUsage()
+    {
+        var calib = DegradationCalibration.Default();
+        try
+        {
+            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false,
+                enableChromaDrift: false, origFormat: TextureFormat.DXT5);
+            var f = typeof(NewPhase2Pipeline).GetField("_isLinear",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsTrue((bool)f.GetValue(pipeline),
+                "Normal usage without explicit isLinear must derive true (linear)");
+        }
+        finally { Object.DestroyImmediate(calib); }
+    }
 }

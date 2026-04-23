@@ -53,7 +53,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         readonly TextureFormat _origFormat;
 
         public NewPhase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed,
-            bool enableChromaDrift = true, TextureFormat origFormat = TextureFormat.RGBA32)
+            bool enableChromaDrift = true, TextureFormat origFormat = TextureFormat.RGBA32,
+            bool? isLinear = null)
         {
             _calib = calib;
             _gate = new PerceptualGate(calib);
@@ -62,7 +63,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             _downscaleMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Downscale, false);
             _compressionMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Compression, enableChromaDrift);
             _jointMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Both, enableChromaDrift);
-            _isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
+            _isLinear = isLinear ?? (usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel);
             _origFormat = origFormat;
         }
 

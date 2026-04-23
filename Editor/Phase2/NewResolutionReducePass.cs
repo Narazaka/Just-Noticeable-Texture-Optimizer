@@ -103,7 +103,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 var usage = aggregatedUsage;
                 // role は cache key とバグ#2 (linear/sRGB RT 選択) のために導出する。
                 var role = UsageToRole(usage, alphaUsed, tex.format);
-                bool isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
+                bool isLinear = Phase2.GpuPipeline.TextureColorSpace.IsLinear(tex, usage);
                 var calib = settings.Calibration as DegradationCalibration ?? DegradationCalibration.Default();
 
                 // Persistent cache lookup
@@ -183,7 +183,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     cache.Contexts[tex] = gpuCtx;
                 }
 
-                var pipeline = new NewPhase2Pipeline(calib, usage, alphaUsed, settings.EnableChromaDrift, tex.format);
+                var pipeline = new NewPhase2Pipeline(calib, usage, alphaUsed, settings.EnableChromaDrift, tex.format, isLinear);
                 NewPhase2Result result;
                 Profiler.BeginSample("JNTO.PipelineFind");
                 try
