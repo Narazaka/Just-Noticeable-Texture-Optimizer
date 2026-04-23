@@ -75,16 +75,20 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Tiling
             float x1 = uv1.x * tw, y1 = uv1.y * th;
             float x2 = uv2.x * tw, y2 = uv2.y * th;
 
-            int minX = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(x0, Mathf.Min(x1, x2))));
-            int maxX = Mathf.Min(g.TilesX - 1, Mathf.FloorToInt(Mathf.Max(x0, Mathf.Max(x1, x2))));
-            int minY = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(y0, Mathf.Min(y1, y2))));
-            int maxY = Mathf.Min(g.TilesY - 1, Mathf.FloorToInt(Mathf.Max(y0, Mathf.Max(y1, y2))));
+            int minX = Mathf.FloorToInt(Mathf.Min(x0, Mathf.Min(x1, x2)));
+            int maxX = Mathf.FloorToInt(Mathf.Max(x0, Mathf.Max(x1, x2)));
+            int minY = Mathf.FloorToInt(Mathf.Min(y0, Mathf.Min(y1, y2)));
+            int maxY = Mathf.FloorToInt(Mathf.Max(y0, Mathf.Max(y1, y2)));
+
+            if (maxX - minX > g.TilesX * 2 || maxY - minY > g.TilesY * 2) return;
 
             for (int ty = minY; ty <= maxY; ty++)
                 for (int tx = minX; tx <= maxX; tx++)
                 {
                     if (!TriangleIntersectsTile(x0, y0, x1, y1, x2, y2, tx, ty)) continue;
-                    ref var tile = ref g.GetTile(tx, ty);
+                    int wtx = ((tx % g.TilesX) + g.TilesX) % g.TilesX;
+                    int wty = ((ty % g.TilesY) + g.TilesY) % g.TilesY;
+                    ref var tile = ref g.GetTile(wtx, wty);
                     tile.HasCoverage = true;
                     if (density > tile.Density) tile.Density = density;
                     if (bw > tile.BoneWeight) tile.BoneWeight = bw;

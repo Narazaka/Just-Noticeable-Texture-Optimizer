@@ -139,4 +139,58 @@ public class TileRasterizerTests
         Object.DestroyImmediate(go);
         Object.DestroyImmediate(mesh);
     }
+
+    [Test]
+    public void TilingUvs_WrappedCoverage()
+    {
+        var go = new GameObject("r");
+        var mf = go.AddComponent<MeshFilter>();
+        var mr = go.AddComponent<MeshRenderer>();
+        var mesh = new Mesh
+        {
+            vertices = new[] { new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0) },
+            uv = new[] { new Vector2(1.0f, 1.0f), new Vector2(2.0f, 1.0f), new Vector2(1.0f, 2.0f) },
+            triangles = new[] { 0, 1, 2 },
+        };
+        mesh.RecalculateBounds();
+        mf.sharedMesh = mesh;
+
+        var grid = UvTileGrid.Create(128, 128);
+        TileRasterizer.Accumulate(grid, mr, mesh, null, null);
+
+        int covered = 0;
+        foreach (var t in grid.Tiles) if (t.HasCoverage) covered++;
+        Assert.Greater(covered, 0,
+            "tiling UVs in [1,2] should wrap and produce coverage in [0,1] tiles");
+
+        Object.DestroyImmediate(go);
+        Object.DestroyImmediate(mesh);
+    }
+
+    [Test]
+    public void NegativeUvs_WrappedCoverage()
+    {
+        var go = new GameObject("r");
+        var mf = go.AddComponent<MeshFilter>();
+        var mr = go.AddComponent<MeshRenderer>();
+        var mesh = new Mesh
+        {
+            vertices = new[] { new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0) },
+            uv = new[] { new Vector2(-1f, -1f), new Vector2(0f, -1f), new Vector2(-1f, 0f) },
+            triangles = new[] { 0, 1, 2 },
+        };
+        mesh.RecalculateBounds();
+        mf.sharedMesh = mesh;
+
+        var grid = UvTileGrid.Create(64, 64);
+        TileRasterizer.Accumulate(grid, mr, mesh, null, null);
+
+        int covered = 0;
+        foreach (var t in grid.Tiles) if (t.HasCoverage) covered++;
+        Assert.Greater(covered, 0,
+            "negative UVs should wrap and produce coverage");
+
+        Object.DestroyImmediate(go);
+        Object.DestroyImmediate(mesh);
+    }
 }
