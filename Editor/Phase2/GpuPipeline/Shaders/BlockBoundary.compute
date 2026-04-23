@@ -15,7 +15,7 @@ int _TextureWidth;
 int _TextureHeight;
 float _BlockBoundaryScale;
 
-float lum(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 // onGrid (x%4==0) / offGrid 差分比を「candidate の比 − orig の比」で取り
 // 「圧縮で新たに発生した 4×4 境界アーチファクト」のみを score 化する。
