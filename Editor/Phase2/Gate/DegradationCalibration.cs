@@ -12,8 +12,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
         [Tooltip("MSSL Structure-only SSIM loss を JND 単位に換算する係数。")]
         public float MsslStructureScale = 5.0f;
 
-        [Tooltip("Ridge Preservation の強度減衰 → JND 係数。")]
-        public float RidgeScale = 4.0f;
+        [Tooltip("Ridge Preservation の強度減衰 → JND 係数。Ridge 差分は [0,1] に正規化済みで saturate しやすいため、threshold と余裕を持たせるため 1.5 に設定。")]
+        public float RidgeScale = 1.5f;
 
         [Tooltip("Banding ピーク比 → JND 係数。")]
         public float BandingScale = 2.5f;
@@ -24,8 +24,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
         [Tooltip("AlphaQuantization → JND 係数。")]
         public float AlphaQuantScale = 2.5f;
 
-        [Tooltip("NormalAngle (正規化済み 0-1) → JND 係数。")]
-        public float NormalAngleScale = 10.0f;
+        [Tooltip("NormalAngle (正規化済み 0-1) → JND 係数。max-per-tile で攻めすぎるため 4.0 に緩和。")]
+        public float NormalAngleScale = 4.0f;
 
         [Tooltip("Preset 別 JND 閾値 (tex_score < T_preset で pass)。")]
         public float ThresholdLow = 1.5f;

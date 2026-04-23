@@ -17,6 +17,15 @@ float _RidgeScale;
 
 float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
+// mip レベル M のテクセル幅 = 1 / (W >> M)
+float2 mipTexelUv(uint2 texDim, float mip)
+{
+    float m = max(0.0, mip);
+    float w = max(1.0, (float)texDim.x / exp2(m));
+    float h = max(1.0, (float)texDim.y / exp2(m));
+    return float2(1.0 / w, 1.0 / h);
+}
+
 float ridgeness(Texture2D<float4> tex, SamplerState s, float2 uv, float pxW, float pxH, float mip)
 {
     float2 dx = float2(pxW, 0);
@@ -70,8 +79,17 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     float2 tileUvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
 
     const int N = 6;
-    float pxW = 1.0 / (float)_TextureWidth;
-    float pxH = 1.0 / (float)_TextureHeight;
+
+    // バグ修正: Orig と Candidate で寸法が異なる (例: 4096 vs 32) のに pxW/pxH を
+    // _TextureWidth/Height で固定していたため、小さい Candidate の Hessian 差分が
+    // 常に 0 となり ridge loss が saturate(1.0) に張り付いていた。各テクスチャの
+    // 寸法を GetDimensions で取得し、サンプリング mip における実ピクセル幅を使う。
+    uint origW, origH, origLv;
+    _Orig.GetDimensions(0, origW, origH, origLv);
+    uint candW, candH, candLv;
+    _Candidate.GetDimensions(0, candW, candH, candLv);
+    float2 origPx = mipTexelUv(uint2(origW, origH), (float)targetLv);
+    float2 candPx = mipTexelUv(uint2(candW, candH), (float)targetLv);
 
     float sumO = 0.0, sumC = 0.0, sumDiff = 0.0;
     int count = 0;
@@ -80,8 +98,8 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     {
         float2 local = (float2(sx, sy) + 0.5) / (float)N;
         float2 uv = lerp(tileUvMin, tileUvMax, local);
-        float rO = ridgeness(_Orig, sampler_Orig, uv, pxW, pxH, (float)targetLv);
-        float rC = ridgeness(_Candidate, sampler_Candidate, uv, pxW, pxH, (float)targetLv);
+        float rO = ridgeness(_Orig, sampler_Orig, uv, origPx.x, origPx.y, (float)targetLv);
+        float rC = ridgeness(_Candidate, sampler_Candidate, uv, candPx.x, candPx.y, (float)targetLv);
         sumO += rO;
         sumC += rC;
         sumDiff += abs(rO - rC);
