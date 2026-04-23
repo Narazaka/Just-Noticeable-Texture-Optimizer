@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Profiling;
 using Narazaka.VRChat.Jnto;
@@ -12,8 +13,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
     public class NewPhase2Result
     {
         public Texture2D Final;
-        public int Size;    // backward compat (= max(Width, Height))
-        public int Width;   // バグ#11 回帰防止: 非正方形対応
+        public int Size;    // = max(Width, Height)
+        public int Width;
         public int Height;
         public TextureFormat Format;
         public GateVerdict FinalVerdict;
@@ -23,8 +24,21 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
     }
 
     /// <summary>
-    /// 新パイプライン: PerceptualGate + BinarySearch + FormatPredictor を統合。
-    /// 旧 Phase2Pipeline と並置し、JntoPlugin の差替えで切替える (M7.2)。
+    /// R-D4-2 容量最小化探索パイプライン。
+    ///
+    /// アルゴリズム:
+    ///   1. FormatCandidateSelector.Select で候補 fmt 集合を得る
+    ///   2. CompressionCandidateEnumerator.Enumerate で (size × fmt) 全候補を列挙
+    ///      (必ず no-op を含み、bytes ≤ origBytes、bytes ASC + bpp DESC でソート済み)
+    ///   3. 順に gate 評価して、最初に pass したものを採用
+    ///      - no-op は自明 pass でスキップ
+    ///      - downscale 必要 → downscale gate
+    ///      - fmt 変更必要 → compression gate
+    ///      - 両方必要なら両方通す
+    ///   4. 全 fail でも no-op が必ずあるので orig を返す
+    ///
+    /// 旧: BinarySearchStrategy + FormatPredictor + EnforceRoleConstraint + BC7Fallback は
+    /// FormatCandidateSelector + 容量最小化探索に統合された。
     /// </summary>
     public class NewPhase2Pipeline
     {
@@ -32,19 +46,23 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         readonly PerceptualGate _gate;
         readonly IMetric[] _downscaleMetrics;
         readonly IMetric[] _compressionMetrics;
+        readonly ShaderUsage _usage;
+        readonly bool _alphaUsed;
         readonly bool _isLinear;
 
-        public NewPhase2Pipeline(DegradationCalibration calib, TextureRole role)
+        public NewPhase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed)
         {
             _calib = calib;
             _gate = new PerceptualGate(calib);
-            _downscaleMetrics = BuildMetrics(role, MetricContext.Downscale);
-            _compressionMetrics = BuildMetrics(role, MetricContext.Compression);
+            _usage = usage;
+            _alphaUsed = alphaUsed;
+            _downscaleMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Downscale);
+            _compressionMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Compression);
             // バグ#2 回帰防止: NormalMap / SingleChannel は linear color space で扱う。
-            _isLinear = role == TextureRole.NormalMap || role == TextureRole.SingleChannel;
+            _isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
         }
 
-        static IMetric[] BuildMetrics(TextureRole role, MetricContext ctx)
+        static IMetric[] BuildMetrics(ShaderUsage usage, bool alphaUsed, MetricContext ctx)
         {
             var list = new List<IMetric>();
             list.Add(new MsslMetric());
@@ -56,17 +74,16 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             {
                 list.Add(new BandingMetric());
                 list.Add(new BlockBoundaryMetric());
-                if (role == TextureRole.ColorAlpha) list.Add(new AlphaQuantizationMetric());
+                if (usage == ShaderUsage.Color && alphaUsed) list.Add(new AlphaQuantizationMetric());
             }
-            if (role == TextureRole.NormalMap) list.Add(new NormalAngleMetric());
+            if (usage == ShaderUsage.Normal) list.Add(new NormalAngleMetric());
             return list.ToArray();
         }
 
         public NewPhase2Result Find(
             Texture2D orig, GpuTextureContext origCtx,
             UvTileGrid grid, float[] rPerTile,
-            TextureRole role, ResolvedSettings settings,
-            BlockStats[] origStats)
+            ResolvedSettings settings)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int origSize = Mathf.Max(orig.width, orig.height);
@@ -92,246 +109,172 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 };
             }
 
-            int minSize = DensityCalculator.MinSize;
+            var fmts = FormatCandidateSelector.Select(orig.format, _usage, _alphaUsed);
+            var candidates = CompressionCandidateEnumerator.Enumerate(
+                orig.width, orig.height, orig.format, fmts, DensityCalculator.MinSize);
 
-            int finalSize;
-            Profiler.BeginSample("JNTO.BinarySearch");
+            NewPhase2Result result = null;
+            var failLog = new StringBuilder();
+            int tried = 0;
+
+            Profiler.BeginSample("JNTO.CandidateLoop");
             try
             {
-                finalSize = BinarySearchStrategy.FindMinPassSize(origSize, minSize, size =>
+                foreach (var cand in candidates)
                 {
-                    if (size >= origSize) return true;
-                    var candidateRt = PyramidBuilder.CreatePyramid(origCtx.Original, size, size, $"Jnto_Cand_{size}", _isLinear);
-                    try
-                    {
-                        var v = _gate.Evaluate(origCtx.Original, candidateRt, grid, rPerTile,
-                            settings.Preset, _downscaleMetrics);
-                        return v.Pass;
-                    }
-                    finally
-                    {
-                        candidateRt.Release();
-                        Object.DestroyImmediate(candidateRt);
-                    }
-                });
-            }
-            finally
-            {
-                Profiler.EndSample();
-            }
+                    tried++;
 
-            // Debug dump (final size 確定後の downscale verdict のみ)
-            if (!string.IsNullOrEmpty(settings.DebugDumpPath))
-            {
-                Profiler.BeginSample("JNTO.DebugDump");
-                try
-                {
-                    int dumpSize = finalSize;
-                    var dumpRt = PyramidBuilder.CreatePyramid(origCtx.Original, dumpSize, dumpSize, "Jnto_Final_Dbg", _isLinear);
-                    try
+                    // No-op: 自明 pass、常に最後の保険として採用可能
+                    if (cand.IsNoOp)
                     {
-                        var debugVerdict = _gate.EvaluateDebug(
-                            origCtx.Original, dumpRt, grid, rPerTile,
-                            settings.Preset, _downscaleMetrics,
-                            out var perMetric, out var names);
-                        Reporting.DebugDump.DumpTileScores(
-                            settings.DebugDumpPath, orig.name, grid, perMetric, names);
-                        for (int i = 0; i < names.Length; i++)
+                        sw.Stop();
+                        result = new NewPhase2Result
                         {
-                            Reporting.DebugDump.DumpHeatmapPng(
-                                settings.DebugDumpPath, orig.name, names[i], grid, perMetric[i]);
+                            Final = orig,
+                            Size = Mathf.Max(orig.width, orig.height),
+                            Width = orig.width,
+                            Height = orig.height,
+                            Format = orig.format,
+                            FinalVerdict = new GateVerdict { Pass = true, TextureScore = 0f },
+                            DecisionReason =
+                                $"accepted NO-OP (size={cand.Width}x{cand.Height}, fmt={cand.Format}, bytes={cand.Bytes}) "
+                                + $"after {tried}/{candidates.Count} candidates. Fails: [{failLog}]",
+                            ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
+                        };
+                        return result;
+                    }
+
+                    bool sizeDiffers = (cand.Width != orig.width || cand.Height != orig.height);
+                    bool fmtDiffers = (cand.Format != orig.format);
+
+                    // 1) downscale gate if sizeDiffers
+                    GateVerdict downVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
+                    RenderTexture referenceRt = null;
+                    if (sizeDiffers)
+                    {
+                        referenceRt = PyramidBuilder.CreatePyramid(
+                            origCtx.Original, cand.Width, cand.Height,
+                            $"Jnto_Cand_{cand.Width}x{cand.Height}", _isLinear);
+                        downVerdict = _gate.Evaluate(
+                            origCtx.Original, referenceRt, grid, rPerTile,
+                            settings.Preset, _downscaleMetrics);
+                        if (!downVerdict.Pass)
+                        {
+                            referenceRt.Release();
+                            Object.DestroyImmediate(referenceRt);
+                            AppendFail(failLog, cand, "downscale", downVerdict);
+                            continue;
                         }
                     }
-                    finally
+
+                    // 2) compression gate if fmtDiffers
+                    GateVerdict compVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
+                    if (fmtDiffers)
                     {
-                        dumpRt.Release();
-                        Object.DestroyImmediate(dumpRt);
+                        // reference = downsampled Texture2D (CompressTexture に必要)
+                        var downsampled = ResolutionReducer.Resize(orig, Mathf.Max(cand.Width, cand.Height));
+                        Texture2D candidateTex = null;
+                        try
+                        {
+                            candidateTex = TextureEncodeDecode.EncodeAndDecode(downsampled, cand.Format);
+                            using (var candCtx = GpuTextureContext.FromTexture2D(candidateTex, _isLinear))
+                            using (var refDownCtx = GpuTextureContext.FromTexture2D(downsampled, _isLinear))
+                            {
+                                compVerdict = _gate.Evaluate(refDownCtx.Original, candCtx.Original,
+                                    grid, rPerTile, settings.Preset, _compressionMetrics);
+                            }
+                        }
+                        finally
+                        {
+                            if (candidateTex != null) Object.DestroyImmediate(candidateTex);
+                            Object.DestroyImmediate(downsampled);
+                        }
+                        if (!compVerdict.Pass)
+                        {
+                            if (referenceRt != null)
+                            {
+                                referenceRt.Release();
+                                Object.DestroyImmediate(referenceRt);
+                            }
+                            AppendFail(failLog, cand, "compression", compVerdict);
+                            continue;
+                        }
                     }
-                }
-                finally
-                {
-                    Profiler.EndSample();
-                }
-            }
 
-            var lightweight = FormatPredictor.PredictLightweight(origStats, role, settings.Preset);
-            TextureFormat finalFmt;
-            GateVerdict finalVerdict;
-            string reason;
-            Profiler.BeginSample("JNTO.ChooseFormat");
-            try
-            {
-                finalFmt = ChooseFormat(orig, origCtx, grid, rPerTile, settings, role,
-                                        finalSize, lightweight,
-                                        out finalVerdict, out reason);
-            }
-            finally
-            {
-                Profiler.EndSample();
-            }
+                    // 両 gate pass → 採用、encode して return
+                    if (referenceRt != null)
+                    {
+                        referenceRt.Release();
+                        Object.DestroyImmediate(referenceRt);
+                    }
 
-            Texture2D final;
-            Profiler.BeginSample("JNTO.FinalEncode");
-            try
-            {
-                final = Encode(orig, finalSize, finalFmt);
+                    Texture2D final;
+                    Profiler.BeginSample("JNTO.FinalEncode");
+                    try
+                    {
+                        final = Encode(orig, cand.Width, cand.Height, cand.Format);
+                    }
+                    finally { Profiler.EndSample(); }
+
+                    sw.Stop();
+                    var finalVerdict = fmtDiffers ? compVerdict : downVerdict;
+                    var reason = new StringBuilder();
+                    reason.Append("accepted ");
+                    reason.Append(cand.Format).Append('@').Append(cand.Width).Append('x').Append(cand.Height);
+                    reason.Append(" (bytes=").Append(cand.Bytes).Append(')');
+                    reason.Append($" after {tried}/{candidates.Count} candidates.");
+                    if (sizeDiffers) reason.Append($" downscale score={downVerdict.TextureScore:F3}.");
+                    if (fmtDiffers) reason.Append($" compression score={compVerdict.TextureScore:F3}.");
+                    if (failLog.Length > 0) reason.Append(" Fails: [").Append(failLog).Append(']');
+                    result = new NewPhase2Result
+                    {
+                        Final = final,
+                        Size = Mathf.Max(final.width, final.height),
+                        Width = final.width,
+                        Height = final.height,
+                        Format = cand.Format,
+                        FinalVerdict = finalVerdict,
+                        DecisionReason = reason.ToString(),
+                        ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
+                    };
+                    return result;
+                }
             }
-            finally
-            {
-                Profiler.EndSample();
-            }
+            finally { Profiler.EndSample(); }
+
+            // 通常ここに到達しない (no-op が必ずある)。フェイルセーフ: orig を返す。
             sw.Stop();
             return new NewPhase2Result
             {
-                Final = final,
-                Size = Mathf.Max(final.width, final.height),
-                Width = final.width,
-                Height = final.height,
-                Format = finalFmt,
-                FinalVerdict = finalVerdict,
-                DecisionReason = reason,
+                Final = orig,
+                Size = origSize,
+                Width = orig.width,
+                Height = orig.height,
+                Format = orig.format,
+                FinalVerdict = new GateVerdict { Pass = false, TextureScore = 0f },
+                DecisionReason = $"fallback (no candidate passed, {tried} tried). Fails: [{failLog}]",
                 ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
             };
         }
 
-        TextureFormat ChooseFormat(
-            Texture2D orig, GpuTextureContext origCtx,
-            UvTileGrid grid, float[] rPerTile,
-            ResolvedSettings settings, TextureRole role,
-            int size, FormatPrediction lightweight,
-            out GateVerdict verdict, out string reason)
+        static void AppendFail(StringBuilder sb, CompressionCandidate cand, string gate, GateVerdict v)
         {
-            bool skipVerify = settings.EncodePolicy == EncodePolicy.Fast && lightweight.Confidence >= 0.95f;
-            if (skipVerify)
-            {
-                verdict = new GateVerdict { Pass = true, TextureScore = 0f };
-                reason = $"Fast-mode skip verify for {lightweight.Format} (conf={lightweight.Confidence:F2})";
-                return EnforceRoleConstraint(lightweight.Format, role, orig.format);
-            }
-
-            var downsampled = ResolutionReducer.Resize(orig, size);
-            try
-            {
-                Texture2D candidate;
-                Profiler.BeginSample("JNTO.Encode." + lightweight.Format);
-                try
-                {
-                    candidate = TextureEncodeDecode.EncodeAndDecode(downsampled, lightweight.Format);
-                }
-                finally
-                {
-                    Profiler.EndSample();
-                }
-                using (var candCtx = GpuTextureContext.FromTexture2D(candidate, _isLinear))
-                using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled, _isLinear))
-                {
-                    verdict = _gate.Evaluate(origDownCtx.Original, candCtx.Original,
-                        grid, rPerTile, settings.Preset, _compressionMetrics);
-                }
-                Object.DestroyImmediate(candidate);
-
-                if (verdict.Pass)
-                {
-                    reason = $"lightweight {lightweight.Format} verify PASS (score={verdict.TextureScore:F3})";
-                    return EnforceRoleConstraint(lightweight.Format, role, orig.format);
-                }
-
-                var fallback = BC7Fallback(role);
-                Texture2D bc7Candidate;
-                Profiler.BeginSample("JNTO.Encode." + fallback);
-                try
-                {
-                    bc7Candidate = TextureEncodeDecode.EncodeAndDecode(downsampled, fallback);
-                }
-                finally
-                {
-                    Profiler.EndSample();
-                }
-                using (var bc7Ctx = GpuTextureContext.FromTexture2D(bc7Candidate, _isLinear))
-                using (var origDownCtx = GpuTextureContext.FromTexture2D(downsampled, _isLinear))
-                {
-                    verdict = _gate.Evaluate(origDownCtx.Original, bc7Ctx.Original,
-                        grid, rPerTile, settings.Preset, _compressionMetrics);
-                }
-                Object.DestroyImmediate(bc7Candidate);
-
-                reason = verdict.Pass
-                    ? $"{fallback} fallback PASS (score={verdict.TextureScore:F3})"
-                    : $"{fallback} fallback FAIL, keeping original";
-                return verdict.Pass
-                    ? EnforceRoleConstraint(fallback, role, orig.format)
-                    : orig.format;
-            }
-            finally
-            {
-                Object.DestroyImmediate(downsampled);
-            }
+            if (sb.Length > 0) sb.Append(" | ");
+            sb.Append(cand.Format).Append('@').Append(cand.Width).Append('x').Append(cand.Height)
+              .Append(' ').Append(gate).Append(" fail score=").Append(v.TextureScore.ToString("F3"));
+            if (!string.IsNullOrEmpty(v.DominantMetric))
+                sb.Append(" metric=").Append(v.DominantMetric);
         }
 
-        static TextureFormat BC7Fallback(TextureRole role)
+        static Texture2D Encode(Texture2D src, int width, int height, TextureFormat fmt)
         {
-            switch (role)
-            {
-                // バグ#5 回帰防止: SingleChannel は BC4 (lightweight) でほぼロスレス。
-                // それでも fail するならサイズ縮小に頼る方が容量効率が良いので BC7 にする。
-                // R8 (非圧縮 8bpp) は BC4 (4bpp) より大きく、fallback として論外。
-                case TextureRole.NormalMap: return TextureFormat.BC7;       // BC5 fail → BC7 (normal を保持)
-                case TextureRole.SingleChannel: return TextureFormat.BC7;   // BC4 fail → BC7
-                case TextureRole.ColorOpaque: return TextureFormat.BC7;     // DXT1 fail → BC7 (α 持つが lossless 扱い)
-                case TextureRole.ColorAlpha: return TextureFormat.BC7;      // DXT5 fail → BC7
-                default: return TextureFormat.BC7;
-            }
-        }
-
-        /// <summary>
-        /// 元 texture の本質的特性 (α の有無、normal/single-channel) を保持する保守ガード。
-        /// 「α 無し input → α あり output」や「NormalMap role → DXT5」等の論理的におかしい昇格を拒否する。
-        /// </summary>
-        static TextureFormat EnforceRoleConstraint(TextureFormat chosen, TextureRole role, TextureFormat origFormat)
-        {
-            // 元 fmt が α 無し系なら、新 fmt も α 無し系に強制 (DXT5 への化けを拒否)
-            bool origIsAlphaFree = origFormat == TextureFormat.DXT1
-                                || origFormat == TextureFormat.DXT1Crunched
-                                || origFormat == TextureFormat.BC4
-                                || origFormat == TextureFormat.BC5
-                                || origFormat == TextureFormat.BC6H
-                                || origFormat == TextureFormat.R8
-                                || origFormat == TextureFormat.RGB24;
-            if (origIsAlphaFree && (chosen == TextureFormat.DXT5 || chosen == TextureFormat.DXT5Crunched))
-            {
-                UnityEngine.Debug.LogWarning(
-                    $"[JNTO] EnforceRoleConstraint: origFormat={origFormat} is alpha-free, " +
-                    $"refusing to upgrade to {chosen}. Falling back to BC7 (preserves color, keeps single 8bpp).");
-                return TextureFormat.BC7;
-            }
-            // role が NormalMap なら BC5 か BC7 のみ
-            if (role == TextureRole.NormalMap && chosen != TextureFormat.BC5 && chosen != TextureFormat.BC7)
-            {
-                UnityEngine.Debug.LogWarning(
-                    $"[JNTO] EnforceRoleConstraint: NormalMap role but chosen={chosen}, " +
-                    $"forcing BC7 to preserve normal channels.");
-                return TextureFormat.BC7;
-            }
-            // role が SingleChannel なら BC4 か BC7 のみ
-            if (role == TextureRole.SingleChannel && chosen != TextureFormat.BC4 && chosen != TextureFormat.BC7)
-            {
-                UnityEngine.Debug.LogWarning(
-                    $"[JNTO] EnforceRoleConstraint: SingleChannel role but chosen={chosen}, forcing BC4.");
-                return TextureFormat.BC4;
-            }
-            return chosen;
-        }
-
-        static Texture2D Encode(Texture2D src, int size, TextureFormat fmt)
-        {
-            var resized = ResolutionReducer.Resize(src, size);
+            int targetMaxDim = Mathf.Max(width, height);
+            var resized = ResolutionReducer.Resize(src, targetMaxDim);
             try
             {
                 var tex = new Texture2D(resized.width, resized.height, TextureFormat.RGBA32, true);
                 tex.name = $"{src.name}_{resized.width}x{resized.height}_{fmt}";
                 tex.SetPixels(resized.GetPixels());
-                // バグ#12 回帰防止: CompressTexture の前に mipchain を必ず更新する。
-                // Apply() は既定で updateMipmaps=true だが、意図を明示するため引数を与える。
                 tex.Apply(updateMipmaps: true);
                 UnityEditor.EditorUtility.CompressTexture(tex, fmt,
                     UnityEditor.TextureCompressionQuality.Normal);

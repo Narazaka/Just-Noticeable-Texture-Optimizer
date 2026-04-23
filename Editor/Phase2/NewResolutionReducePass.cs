@@ -14,9 +14,9 @@ using Narazaka.VRChat.Jnto.Editor.Resolution;
 namespace Narazaka.VRChat.Jnto.Editor.Phase2
 {
     /// <summary>
-    /// M7 新パイプライン (PerceptualGate + TileGrid + BinarySearch + FormatPredictor + Persistent/InMemory cache)
-    /// を束ねる NDMF Pass。旧 <see cref="ResolutionReducePass"/> の完全置換であり、JntoPlugin から本 Pass を
-    /// Optimizing フェーズに登録する。
+    /// M7 新パイプライン (PerceptualGate + TileGrid + FormatCandidateSelector +
+    /// CompressionCandidateEnumerator + Persistent/InMemory cache) を束ねる NDMF Pass。
+    /// R-D4-2 で (size × fmt) 容量最小化探索に書き換わった。
     /// </summary>
     public class NewResolutionReducePass : Pass<NewResolutionReducePass>
     {
@@ -78,13 +78,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 }
                 if (settings == null) return;
 
-                bool alphaRequired = false;
+                bool alphaUsed = false;
                 Material repMat = null; string repProp = null;
                 foreach (var r in refs)
                 {
                     if (r.Material != null && LilTexAlphaUsageAnalyzer.IsAlphaUsed(r.Material, r.PropertyName))
                     {
-                        alphaRequired = true;
+                        alphaUsed = true;
                         repMat = r.Material;
                         repProp = r.PropertyName;
                         break;
@@ -95,10 +95,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                         repProp = r.PropertyName;
                     }
                 }
-                var role = TextureTypeClassifier.Classify(repMat, repProp, tex, alphaRequired);
-                // バグ#2 回帰防止: NormalMap / SingleChannel は linear texture なので
-                // GpuTextureContext/PyramidBuilder 側でも sRGB=false の RT を使う。
-                bool isLinear = role == TextureRole.NormalMap || role == TextureRole.SingleChannel;
+                var usage = ShaderUsageInferrer.Infer(repMat, repProp, tex);
+                // role は cache key とバグ#2 (linear/sRGB RT 選択) のために導出する。
+                var role = UsageToRole(usage, alphaUsed, tex.format);
+                bool isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
                 var calib = settings.Calibration as DegradationCalibration ?? DegradationCalibration.Default();
 
                 // Persistent cache lookup
@@ -160,7 +160,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 }
                 UnityEngine.Debug.Log(
                     $"[JNTO/grid] {tex.name}: tiles={grid.Tiles.Length} ({grid.TilesX}x{grid.TilesY}, ts={grid.TileSize}), " +
-                    $"covered={coveredTileCount}, rNonZero={rNonZeroCount}, role={role}, refs={refs.Count}");
+                    $"covered={coveredTileCount}, rNonZero={rNonZeroCount}, usage={usage}, alpha={alphaUsed}, refs={refs.Count}");
 
                 // 早期スキップ: 評価不能なら処理対象外
                 if (rNonZeroCount == 0)
@@ -169,32 +169,19 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     return;
                 }
 
-                // GPU context + block stats (cached per build)
+                // GPU context (cached per build)
                 if (!cache.Contexts.TryGetValue(tex, out var gpuCtx))
                 {
                     gpuCtx = GpuTextureContext.FromTexture2D(tex, isLinear);
                     cache.Contexts[tex] = gpuCtx;
                 }
-                if (!cache.BlockStats.TryGetValue(tex, out var stats))
-                {
-                    Profiler.BeginSample("JNTO.BlockStats");
-                    try
-                    {
-                        stats = BlockStatsComputer.Compute(gpuCtx.Original, tex.width, tex.height);
-                    }
-                    finally
-                    {
-                        Profiler.EndSample();
-                    }
-                    cache.BlockStats[tex] = stats;
-                }
 
-                var pipeline = new NewPhase2Pipeline(calib, role);
+                var pipeline = new NewPhase2Pipeline(calib, usage, alphaUsed);
                 NewPhase2Result result;
                 Profiler.BeginSample("JNTO.PipelineFind");
                 try
                 {
-                    result = pipeline.Find(tex, gpuCtx, grid, rPerTile, role, settings, stats);
+                    result = pipeline.Find(tex, gpuCtx, grid, rPerTile, settings);
                 }
                 finally
                 {
@@ -247,12 +234,29 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             }
         }
 
+        /// <summary>
+        /// (ShaderUsage, alphaUsed, origFmt) から cache key 用の TextureRole を導出する。
+        /// 新パイプライン内部は role を持たないが、CacheKeyBuilder の互換のために必要。
+        /// </summary>
+        static TextureRole UsageToRole(ShaderUsage usage, bool alphaUsed, TextureFormat origFmt)
+        {
+            if (usage == ShaderUsage.Normal) return TextureRole.NormalMap;
+            if (usage == ShaderUsage.SingleChannel) return TextureRole.SingleChannel;
+
+            // Color
+            if (origFmt == TextureFormat.BC4 || origFmt == TextureFormat.R8 || origFmt == TextureFormat.Alpha8)
+                return TextureRole.SingleChannel;
+            if (origFmt == TextureFormat.BC5 || origFmt == TextureFormat.RG16)
+                return TextureRole.NormalMap;
+            if (origFmt == TextureFormat.DXT1 || origFmt == TextureFormat.DXT1Crunched
+                || origFmt == TextureFormat.BC6H || origFmt == TextureFormat.RGB24)
+                return TextureRole.ColorOpaque;
+            return alphaUsed ? TextureRole.ColorAlpha : TextureRole.ColorOpaque;
+        }
+
         static Texture2D RestoreFromRaw(Texture2D orig, CachedTextureResult cached)
         {
             if (!System.Enum.TryParse<TextureFormat>(cached.FinalFormatName, out var fmt)) return null;
-            // バグ#11 回帰防止: 非正方形テクスチャの W/H を別々に復元。
-            // レガシー cache (FinalWidth/Height=0) は TryLoad 側で FinalSize から補完済みだが、
-            // 念のためここでも fallback。
             int w = cached.FinalWidth > 0 ? cached.FinalWidth : cached.FinalSize;
             int h = cached.FinalHeight > 0 ? cached.FinalHeight : cached.FinalSize;
             try
@@ -260,7 +264,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 var t = new Texture2D(w, h, fmt, true);
                 t.name = orig.name + "_cached";
                 t.LoadRawTextureData(cached.CompressedRawBytes);
-                t.Apply(updateMipmaps: false);  // raw bytes は既に mipchain を含む
+                t.Apply(updateMipmaps: false);
                 return t;
             }
             catch
@@ -291,27 +295,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
 
         static long EstimateSavedBytes(Texture2D orig, NewPhase2Result r)
         {
-            long origBytes = BytesFor(orig.width, orig.height, orig.format);
-            long newBytes = BytesFor(r.Size, r.Size, r.Format);
+            long origBytes = BytesEstimator.WithMips(orig.width, orig.height, orig.format);
+            long newBytes = BytesEstimator.WithMips(r.Width, r.Height, r.Format);
             return origBytes - newBytes;
         }
 
         static long EstimateSavedBytesRaw(Texture2D orig, int finalSize, TextureFormat finalFmt)
         {
-            long origBytes = BytesFor(orig.width, orig.height, orig.format);
-            long newBytes = BytesFor(finalSize, finalSize, finalFmt);
+            long origBytes = BytesEstimator.WithMips(orig.width, orig.height, orig.format);
+            // cache 経由で W/H が失われた場合は square 推定
+            long newBytes = BytesEstimator.WithMips(finalSize, finalSize, finalFmt);
             return origBytes - newBytes;
-        }
-
-        static long BytesFor(int w, int h, TextureFormat fmt)
-        {
-            int bpp = fmt == TextureFormat.DXT1 ? 4
-                    : fmt == TextureFormat.DXT5 ? 8
-                    : fmt == TextureFormat.BC5 || fmt == TextureFormat.BC7 ? 8
-                    : fmt == TextureFormat.BC4 ? 4
-                    : 32;
-            long mipped = (long)w * h * bpp / 8;
-            return (long)(mipped * 1.33f);
         }
 
         static Mesh GetMesh(Renderer renderer)

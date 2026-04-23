@@ -33,10 +33,8 @@ public class NewPhase2PipelineTests
 
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var stats = BlockStatsComputer.Compute(ctx.Original, 256, 256);
-                var pipeline = new NewPhase2Pipeline(calib, TextureRole.ColorOpaque);
-                var result = pipeline.Find(t, ctx, grid, r,
-                    TextureRole.ColorOpaque, settings, stats);
+                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var result = pipeline.Find(t, ctx, grid, r, settings);
 
                 Assert.IsNotNull(result);
                 Assert.IsNotNull(result.Final);
@@ -45,47 +43,7 @@ public class NewPhase2PipelineTests
                 Assert.IsTrue(result.ProcessingMs > 0f);
                 Assert.IsNotNull(result.DecisionReason);
 
-                Object.DestroyImmediate(result.Final);
-            }
-            Object.DestroyImmediate(calib);
-        }
-        finally
-        {
-            Object.DestroyImmediate(t);
-        }
-    }
-
-    [Test]
-    public void Find_FastMode_SkipsVerifyForHighConfidence()
-    {
-        // 全 flat color → DXT1 高 confidence → Fast モードで verify スキップ
-        var t = MakeSolid(128, Color.gray);
-        try
-        {
-            var grid = UvTileGrid.Create(128, 128);
-            for (int i = 0; i < grid.Tiles.Length; i++)
-                grid.Tiles[i] = new TileStats { HasCoverage = true, Density = 100f, BoneWeight = 1f };
-            var r = new float[grid.Tiles.Length];
-            for (int i = 0; i < r.Length; i++) r[i] = grid.TileSize;
-
-            var calib = DegradationCalibration.Default();
-            var settings = new ResolvedSettings
-            {
-                Preset = QualityPreset.Medium,
-                EncodePolicy = EncodePolicy.Fast,
-                CacheMode = CacheMode.Full,
-            };
-
-            using (var ctx = GpuTextureContext.FromTexture2D(t))
-            {
-                var stats = BlockStatsComputer.Compute(ctx.Original, 128, 128);
-                var pipeline = new NewPhase2Pipeline(calib, TextureRole.ColorOpaque);
-                var result = pipeline.Find(t, ctx, grid, r,
-                    TextureRole.ColorOpaque, settings, stats);
-
-                Assert.IsNotNull(result);
-                StringAssert.Contains("Fast-mode skip verify", result.DecisionReason);
-                Object.DestroyImmediate(result.Final);
+                if (result.Final != t) Object.DestroyImmediate(result.Final);
             }
             Object.DestroyImmediate(calib);
         }
@@ -114,10 +72,8 @@ public class NewPhase2PipelineTests
 
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var stats = BlockStatsComputer.Compute(ctx.Original, 256, 256);
-                var pipeline = new NewPhase2Pipeline(calib, TextureRole.ColorOpaque);
-                var result = pipeline.Find(t, ctx, grid, r,
-                    TextureRole.ColorOpaque, settings, stats);
+                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var result = pipeline.Find(t, ctx, grid, r, settings);
 
                 Assert.IsNotNull(result);
                 // 評価不能 → 縮小しない (orig 維持)
@@ -137,15 +93,6 @@ public class NewPhase2PipelineTests
         for (int y = 0; y < n; y++)
         for (int x = 0; x < n; x++)
             px[y * n + x] = (((x >> 1) + (y >> 1)) & 1) == 0 ? Color.black : Color.white;
-        t.SetPixels(px); t.Apply();
-        return t;
-    }
-
-    static Texture2D MakeSolid(int n, Color c)
-    {
-        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
-        var px = new Color[n * n];
-        for (int i = 0; i < px.Length; i++) px[i] = c;
         t.SetPixels(px); t.Apply();
         return t;
     }

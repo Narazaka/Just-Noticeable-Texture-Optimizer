@@ -1,7 +1,6 @@
 using NUnit.Framework;
 using UnityEngine;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Cache;
-using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 
 public class InMemoryCacheTests
@@ -12,7 +11,6 @@ public class InMemoryCacheTests
         using (var c = new InMemoryCache())
         {
             Assert.AreEqual(0, c.Contexts.Count);
-            Assert.AreEqual(0, c.BlockStats.Count);
         }
     }
 
@@ -28,22 +26,6 @@ public class InMemoryCacheTests
                 c.Contexts[t] = ctx;
                 Assert.IsTrue(c.Contexts.ContainsKey(t));
                 Assert.AreSame(ctx, c.Contexts[t]);
-            }
-        }
-        finally { Object.DestroyImmediate(t); }
-    }
-
-    [Test]
-    public void CanStoreAndRetrieve_BlockStats()
-    {
-        var t = new Texture2D(8, 8, TextureFormat.RGBA32, false);
-        try
-        {
-            using (var c = new InMemoryCache())
-            {
-                var stats = new BlockStats[4];
-                c.BlockStats[t] = stats;
-                Assert.AreSame(stats, c.BlockStats[t]);
             }
         }
         finally { Object.DestroyImmediate(t); }
@@ -69,7 +51,6 @@ public class InMemoryCacheTests
             Assert.IsNull(ctx1.Original, "ctx1 should be released");
             Assert.IsNull(ctx2.Original, "ctx2 should be released");
             Assert.AreEqual(0, c.Contexts.Count);
-            Assert.AreEqual(0, c.BlockStats.Count);
         }
         finally
         {

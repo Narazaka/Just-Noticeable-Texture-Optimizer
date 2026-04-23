@@ -1,109 +1,102 @@
 using NUnit.Framework;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
-using Narazaka.VRChat.Jnto;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
 
 /// <summary>
 /// Critical 不変条件: 元 texture の本質的特性を保持する。
 /// - 元 fmt が α 無し → 新 fmt も α 無し
-/// - 元 fmt が NormalMap → 新 fmt も NormalMap 系
-/// - 元 fmt が SingleChannel → 新 fmt も SingleChannel 系
+/// - 元 fmt が Normal-encoding → 新 fmt も Normal 系 (BC5/BC7)
+/// - 元 fmt が Single-channel → 新 fmt も Single 系 (BC4/BC7)
+/// - DXT1 → DXT5 等への α 昇格を禁止
+///
+/// R-D4-2 で FormatCandidateSelector + CompressionCandidateEnumerator の
+/// 出力のみが pipeline の候補となるため、この両者で不変条件を検証する。
 /// </summary>
 public class RoleFormatInvariantsTests
 {
-    // === Role 判定 ===
+    // === DXT1 origin は DXT5/BC7 以外の α 昇格を拒否する (α 使用なしなら DXT5 にもならない) ===
 
     [Test]
-    public void Classify_OriginalDxt1Texture_ReturnsColorOpaqueRegardlessOfAlphaFlag()
+    public void DXT1_Color_AlphaNotUsed_NeverPromotesToAlphaFormat()
     {
-        // 元 fmt が DXT1 (α 1bit、実質 α 無し) なら、material が α 必要と言っても ColorOpaque
-        var t = new Texture2D(4, 4, TextureFormat.DXT1, false);
-        try
+        var fmts = FormatCandidateSelector.Select(TextureFormat.DXT1, ShaderUsage.Color, alphaUsed: false);
+        Assert.IsFalse(fmts.Contains(TextureFormat.DXT5),
+            "DXT1 origin + alphaUsed=false must never upgrade to DXT5");
+        Assert.IsFalse(fmts.Contains(TextureFormat.RGBA32),
+            "DXT1 origin + alphaUsed=false must never upgrade to RGBA32");
+    }
+
+    [Test]
+    public void DXT1_Normal_OnlyDXT1()
+    {
+        // 再エンコ先が意味ない → DXT1 のまま (size 縮小のみ)
+        var fmts = FormatCandidateSelector.Select(TextureFormat.DXT1, ShaderUsage.Normal, alphaUsed: false);
+        Assert.AreEqual(1, fmts.Count);
+        Assert.AreEqual(TextureFormat.DXT1, fmts[0]);
+    }
+
+    // === BC5 origin (Normal) は BC5/BC7 以外を拒否する ===
+
+    [Test]
+    public void BC5_Normal_OnlyBC5BC7()
+    {
+        var fmts = FormatCandidateSelector.Select(TextureFormat.BC5, ShaderUsage.Normal, false);
+        foreach (var f in fmts)
         {
-            // alphaRequired=true でも、元が DXT1 なら α は実質情報ゼロ → ColorOpaque
-            var role = TextureTypeClassifier.Classify(null, null, t, alphaRequired: true);
-            Assert.AreEqual(TextureRole.ColorOpaque, role,
-                "DXT1 input has no usable alpha; classifier must not promote to ColorAlpha");
+            Assert.IsTrue(f == TextureFormat.BC5 || f == TextureFormat.BC7,
+                $"BC5 origin Normal must only pick BC5 or BC7, got {f}");
         }
-        finally { Object.DestroyImmediate(t); }
+        Assert.IsFalse(fmts.Contains(TextureFormat.DXT5),
+            "BC5 Normal must never pick DXT5");
     }
 
+    // === BC4 origin (SingleChannel) は BC4/BC7 以外を拒否する ===
+
     [Test]
-    public void Classify_OriginalBC5Texture_ReturnsNormalMap()
+    public void BC4_SingleChannel_OnlyBC4BC7()
     {
-        var t = new Texture2D(4, 4, TextureFormat.BC5, false);
-        try
+        var fmts = FormatCandidateSelector.Select(TextureFormat.BC4, ShaderUsage.SingleChannel, false);
+        foreach (var f in fmts)
         {
-            var role = TextureTypeClassifier.Classify(null, null, t, alphaRequired: false);
-            Assert.AreEqual(TextureRole.NormalMap, role,
-                "BC5 is a normal-map format; classifier must reflect this");
+            Assert.IsTrue(f == TextureFormat.BC4 || f == TextureFormat.BC7,
+                $"BC4 origin SingleChannel must only pick BC4 or BC7, got {f}");
         }
-        finally { Object.DestroyImmediate(t); }
     }
 
+    // === α 物理的無し fmt (RGB24/BC6H) + Color は DXT1/BC7 に制約 ===
+
     [Test]
-    public void Classify_OriginalBC4Texture_ReturnsSingleChannel()
+    public void RGB24_Color_NeverPicksAlphaFormat()
     {
-        var t = new Texture2D(4, 4, TextureFormat.BC4, false);
-        try
+        var fmts = FormatCandidateSelector.Select(TextureFormat.RGB24, ShaderUsage.Color, false);
+        Assert.IsFalse(fmts.Contains(TextureFormat.DXT5));
+        Assert.IsFalse(fmts.Contains(TextureFormat.RGBA32));
+    }
+
+    // === Enumerator: no-op 含むこと / bytes <= orig 制約 ===
+
+    [Test]
+    public void Enumerator_DXT1_Color_AlphaNotUsed_HasDXT1AndBC7OnlyCandidates()
+    {
+        var fmts = FormatCandidateSelector.Select(TextureFormat.DXT1, ShaderUsage.Color, false);
+        var list = CompressionCandidateEnumerator.Enumerate(1024, 1024, TextureFormat.DXT1, fmts, 32);
+        foreach (var c in list)
         {
-            var role = TextureTypeClassifier.Classify(null, null, t, alphaRequired: false);
-            Assert.AreEqual(TextureRole.SingleChannel, role,
-                "BC4 is a single-channel format");
+            Assert.IsTrue(c.Format == TextureFormat.DXT1 || c.Format == TextureFormat.BC7,
+                $"DXT1 Color alphaNotUsed candidate set must only contain DXT1/BC7, got {c.Format}");
         }
-        finally { Object.DestroyImmediate(t); }
+        // no-op (DXT1@1024x1024) が必ず含まれる
+        Assert.IsTrue(list.Any(c => c.IsNoOp && c.Format == TextureFormat.DXT1 && c.Width == 1024));
     }
 
     [Test]
-    public void Classify_OriginalDxt5Texture_DefaultsToColorAlpha()
+    public void Enumerator_BC5_Normal_NeverProducesDXT5()
     {
-        var t = new Texture2D(4, 4, TextureFormat.DXT5, false);
-        try
-        {
-            var role = TextureTypeClassifier.Classify(null, null, t, alphaRequired: false);
-            // DXT5 は α 持つ → ColorAlpha
-            Assert.AreEqual(TextureRole.ColorAlpha, role);
-        }
-        finally { Object.DestroyImmediate(t); }
-    }
-
-    // === Format 選択不変条件 ===
-
-    [Test]
-    public void Lightweight_ColorOpaque_NeverPicksAlphaFormat()
-    {
-        // ColorOpaque role からは α 形式は出てこない
-        var stats = new BlockStats[16];
-        for (int i = 0; i < stats.Length; i++)
-            stats[i] = new BlockStats { Planarity = 0.05f };
-        var p = FormatPredictor.PredictLightweight(stats, TextureRole.ColorOpaque, QualityPreset.Medium);
-        Assert.AreNotEqual(TextureFormat.DXT5, p.Format,
-            "ColorOpaque must never pick DXT5 (alpha format)");
-        Assert.AreNotEqual(TextureFormat.BC7, p.Format,
-            "ColorOpaque lightweight should be DXT1, not BC7");
-    }
-
-    [Test]
-    public void Lightweight_NormalMap_PicksBC5()
-    {
-        var stats = new BlockStats[16];
-        var p = FormatPredictor.PredictLightweight(stats, TextureRole.NormalMap, QualityPreset.Medium);
-        Assert.AreEqual(TextureFormat.BC5, p.Format);
-    }
-
-    // === Pipeline-level fallback 不変条件 ===
-
-    [Test]
-    public void ChooseFormat_OriginalAlphaFree_FallbackNeverPicksAlphaFormat()
-    {
-        // BC7Fallback は private static なので reflection で呼び出し、
-        // ColorOpaque role が DXT5 に化けないことを確認する。
-        var pipelineType = typeof(NewPhase2Pipeline);
-        var method = pipelineType.GetMethod("BC7Fallback",
-            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-        Assert.IsNotNull(method, "BC7Fallback method must exist on NewPhase2Pipeline");
-        var fmt = (TextureFormat)method.Invoke(null, new object[] { TextureRole.ColorOpaque });
-        Assert.AreNotEqual(TextureFormat.DXT5, fmt,
-            "ColorOpaque BC7Fallback must not pick DXT5");
+        var fmts = FormatCandidateSelector.Select(TextureFormat.BC5, ShaderUsage.Normal, false);
+        var list = CompressionCandidateEnumerator.Enumerate(1024, 1024, TextureFormat.BC5, fmts, 32);
+        Assert.IsFalse(list.Any(c => c.Format == TextureFormat.DXT5),
+            "BC5 Normal pipeline must never generate DXT5 candidates");
     }
 }
