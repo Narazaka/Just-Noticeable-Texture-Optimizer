@@ -13,6 +13,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Reporting
             w.Show();
         }
 
+        [MenuItem("Tools/Just-Noticeable Texture Optimizer/Clear Cache")]
+        public static void ClearCache()
+        {
+            Cache.PersistentCache.ClearAll();
+            Debug.Log("[JNTO] Persistent cache cleared.");
+        }
+
         Vector2 _scroll;
         int _selectedIndex = -1;
         string _filter = "";
