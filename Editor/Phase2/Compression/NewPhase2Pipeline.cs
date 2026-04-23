@@ -475,8 +475,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         static Texture2D Encode(Texture2D src, int width, int height, TextureFormat fmt,
             bool isLinear, TextureFormat srcOriginalFormat = TextureFormat.RGBA32)
         {
-            int targetMaxDim = Mathf.Max(width, height);
-            var resized = ResolutionReducer.Resize(src, targetMaxDim, isLinear);
+            // 候補が enumerate した (width, height) をそのまま使う (targetMaxDim 経由の丸め差分を排除)
+            var resized = ResolutionReducer.ResizeToSize(src, width, height, isLinear);
             try
             {
                 var tex = new Texture2D(resized.width, resized.height, TextureFormat.RGBA32, true, isLinear);

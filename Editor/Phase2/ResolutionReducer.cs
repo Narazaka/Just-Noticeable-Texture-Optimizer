@@ -4,21 +4,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
 {
     public static class ResolutionReducer
     {
+        /// <summary>Max-dim ベースの縮小。非 POT は AspectSizeCalculator で短辺を丸める。</summary>
         public static Texture2D Resize(Texture2D src, int targetMaxDim, bool isLinear = false)
         {
-            int tw, th;
-            if (src.width >= src.height)
-            {
-                tw = targetMaxDim;
-                th = Mathf.Max(4, RoundToMultipleOf4(Mathf.RoundToInt(targetMaxDim * (float)src.height / src.width)));
-            }
-            else
-            {
-                th = targetMaxDim;
-                tw = Mathf.Max(4, RoundToMultipleOf4(Mathf.RoundToInt(targetMaxDim * (float)src.width / src.height)));
-            }
+            var (tw, th) = AspectSizeCalculator.Compute(src.width, src.height, targetMaxDim);
+            return ResizeToSize(src, tw, th, isLinear);
+        }
 
-            var desc = new RenderTextureDescriptor(tw, th, RenderTextureFormat.ARGB32, 0)
+        /// <summary>(w, h) を直接指定する縮小。CompressionCandidateEnumerator の結果をそのまま渡す経路で使う。</summary>
+        public static Texture2D ResizeToSize(Texture2D src, int width, int height, bool isLinear = false)
+        {
+            var desc = new RenderTextureDescriptor(width, height, RenderTextureFormat.ARGB32, 0)
             {
                 sRGB = !isLinear,
             };
@@ -26,18 +22,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             Graphics.Blit(src, rt);
             var prev = RenderTexture.active;
             RenderTexture.active = rt;
-            var dst = new Texture2D(tw, th, TextureFormat.RGBA32, true, isLinear);
-            dst.name = src.name + "_r" + targetMaxDim;
-            dst.ReadPixels(new Rect(0, 0, tw, th), 0, 0);
+            var dst = new Texture2D(width, height, TextureFormat.RGBA32, true, isLinear);
+            dst.name = src.name + "_r" + Mathf.Max(width, height);
+            dst.ReadPixels(new Rect(0, 0, width, height), 0, 0);
             dst.Apply(true);
             RenderTexture.active = prev;
             RenderTexture.ReleaseTemporary(rt);
             return dst;
-        }
-
-        static int RoundToMultipleOf4(int v)
-        {
-            return ((v + 3) / 4) * 4;
         }
     }
 }

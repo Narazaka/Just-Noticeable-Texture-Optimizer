@@ -123,25 +123,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             return list;
         }
 
-        /// <summary>
-        /// ResolutionReducer.Resize と同じロジックで (w, h) を計算する。
-        /// 大きい辺 = targetMaxDim、小さい辺 = 比率を保って 4 の倍数に丸める。
-        /// </summary>
         static (int w, int h) ComputeAspectSize(int origW, int origH, int targetMaxDim)
-        {
-            if (origW >= origH)
-            {
-                int tw = targetMaxDim;
-                int th = Mathf.Max(4, RoundToMultipleOf4(Mathf.RoundToInt(targetMaxDim * (float)origH / origW)));
-                return (tw, th);
-            }
-            else
-            {
-                int th = targetMaxDim;
-                int tw = Mathf.Max(4, RoundToMultipleOf4(Mathf.RoundToInt(targetMaxDim * (float)origW / origH)));
-                return (tw, th);
-            }
-        }
+            => AspectSizeCalculator.Compute(origW, origH, targetMaxDim);
 
         /// <summary>
         /// 事後圧縮 (LZ4/LZMA) 効率の相対ランク。小さいほど効率が良い (= 優先)。
@@ -206,6 +189,5 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             }
         }
 
-        static int RoundToMultipleOf4(int v) => ((v + 3) / 4) * 4;
     }
 }
