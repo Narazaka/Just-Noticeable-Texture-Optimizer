@@ -47,9 +47,10 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     float pxW = 1.0 / (float)_TextureWidth;
     float pxH = 1.0 / (float)_TextureHeight;
 
-    float onSumC = 0.0; float offSumC = 0.0;
-    float onSumO = 0.0; float offSumO = 0.0;
-    int onCount = 0; int offCount = 0;
+    // --- X 方向ブロック境界検出 ---
+    float onSumCx = 0.0; float offSumCx = 0.0;
+    float onSumOx = 0.0; float offSumOx = 0.0;
+    int onCountX = 0; int offCountX = 0;
 
     for (int y = py0; y < py1; y++)
     {
@@ -68,35 +69,62 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
 
             if ((x & 3) == 0)
             {
-                onSumC += dC; onSumO += dO; onCount++;
+                onSumCx += dC; onSumOx += dO; onCountX++;
             }
             else
             {
-                offSumC += dC; offSumO += dO; offCount++;
+                offSumCx += dC; offSumOx += dO; offCountX++;
             }
         }
     }
 
-    if (onCount == 0 || offCount == 0)
+    // --- Y 方向ブロック境界検出 ---
+    float onSumCy = 0.0; float offSumCy = 0.0;
+    float onSumOy = 0.0; float offSumOy = 0.0;
+    int onCountY = 0; int offCountY = 0;
+
+    for (int yy = py0 + 1; yy < py1; yy++)
     {
-        _Scores[tileIdx] = 0.0;
-        return;
+        for (int xx = px0; xx < px1; xx++)
+        {
+            float2 uv  = (float2(xx, yy    ) + 0.5) * float2(pxW, pxH);
+            float2 uvU = (float2(xx, yy - 1) + 0.5) * float2(pxW, pxH);
+
+            float c  = lum(_Candidate.SampleLevel(sampler_Candidate, uv,  0).rgb);
+            float cU = lum(_Candidate.SampleLevel(sampler_Candidate, uvU, 0).rgb);
+            float dC = abs(c - cU);
+
+            float o  = lum(_Orig.SampleLevel(sampler_Orig, uv,  0).rgb);
+            float oU = lum(_Orig.SampleLevel(sampler_Orig, uvU, 0).rgb);
+            float dO = abs(o - oU);
+
+            if ((yy & 3) == 0)
+            {
+                onSumCy += dC; onSumOy += dO; onCountY++;
+            }
+            else
+            {
+                offSumCy += dC; offSumOy += dO; offCountY++;
+            }
+        }
     }
 
-    float onAvgC = onSumC / (float)onCount;
-    float offAvgC = offSumC / (float)offCount;
-    float onAvgO = onSumO / (float)onCount;
-    float offAvgO = offSumO / (float)offCount;
+    // --- max(X方向, Y方向) で最終スコア ---
+    float scoreX = 0.0;
+    if (onCountX > 0 && offCountX > 0)
+    {
+        float ratioCx = (onSumCx / (float)onCountX) / max(offSumCx / (float)offCountX, 1e-6);
+        float ratioOx = (onSumOx / (float)onCountX) / max(offSumOx / (float)offCountX, 1e-6);
+        scoreX = saturate(max(0.0, max(0.0, ratioCx - 1.5) - max(0.0, ratioOx - 1.5)) / 1.5);
+    }
 
-    // CPU 参照と整合: 0 除算は 1e-6 で下駄あげ
-    float ratioC = onAvgC / max(offAvgC, 1e-6);
-    float ratioO = onAvgO / max(offAvgO, 1e-6);
+    float scoreY = 0.0;
+    if (onCountY > 0 && offCountY > 0)
+    {
+        float ratioCy = (onSumCy / (float)onCountY) / max(offSumCy / (float)offCountY, 1e-6);
+        float ratioOy = (onSumOy / (float)onCountY) / max(offSumOy / (float)offCountY, 1e-6);
+        scoreY = saturate(max(0.0, max(0.0, ratioCy - 1.5) - max(0.0, ratioOy - 1.5)) / 1.5);
+    }
 
-    // 「圧縮で追加で立ったブロック境界」= candidate の ratio 超過 − orig の ratio 超過
-    float extraC = max(0.0, ratioC - 1.5);
-    float extraO = max(0.0, ratioO - 1.5);
-    float extra = max(0.0, extraC - extraO);
-
-    float score = saturate(extra / 1.5);
-    _Scores[tileIdx] = score * _BlockBoundaryScale;
+    _Scores[tileIdx] = max(scoreX, scoreY) * _BlockBoundaryScale;
 }

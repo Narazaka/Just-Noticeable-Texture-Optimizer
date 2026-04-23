@@ -45,6 +45,7 @@ public class DegradationCalibrationTests
             Assert.Greater(c.BlockBoundaryScale, 0f);
             Assert.Greater(c.AlphaQuantScale, 0f);
             Assert.Greater(c.NormalAngleScale, 0f);
+            Assert.Greater(c.ChromaDriftScale, 0f);
         }
         finally { Object.DestroyImmediate(c); }
     }

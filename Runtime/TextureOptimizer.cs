@@ -29,6 +29,9 @@ namespace Narazaka.VRChat.Jnto
             "Crunched はダウンロード容量を大幅に削減するが、ランタイムで CPU 展開負荷がかかる。")]
         public BoolOverride AllowCrunched = new BoolOverride { HasValue = true, Value = false };
 
+        [Tooltip("圧縮時の色相ドリフト検出を有効にする。DXT1 等のエンドポイント量子化による色シフトを検出。不要なら無効化可能。")]
+        public BoolOverride EnableChromaDrift = new BoolOverride { HasValue = true, Value = true };
+
         [Tooltip("最適化の優先対象。VRAM: GPU メモリ最小化 (bpp 基準)。Download: アセットバンドル圧縮後のダウンロード容量最小化。")]
         public OptimizationTargetOverride OptimizationTarget = new OptimizationTargetOverride
             { HasValue = true, Value = Jnto.OptimizationTarget.VRAM };

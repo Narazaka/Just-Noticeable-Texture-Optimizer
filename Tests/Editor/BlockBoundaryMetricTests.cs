@@ -95,15 +95,57 @@ public class BlockBoundaryMetricTests
         return r;
     }
 
+    [Test]
+    public void VerticalGridStepPattern_DetectsBoundary()
+    {
+        var orig = MakeGradient(128);
+        var cand = MakeVerticalGridSteps(128, period: 4);
+        var grid = UvTileGrid.Create(128, 128);
+        MarkAllCovered(grid);
+        var r = FullR(grid);
+        var calib = DegradationCalibration.Default();
+
+        using (var ctxO = GpuTextureContext.FromTexture2D(orig))
+        using (var ctxC = GpuTextureContext.FromTexture2D(cand))
+        {
+            var metric = new BlockBoundaryMetric();
+            var scores = new float[grid.Tiles.Length];
+            metric.Evaluate(ctxO.Original, ctxC.Original, grid, r, calib, scores);
+
+            float maxScore = 0f;
+            foreach (var s in scores) if (s > maxScore) maxScore = s;
+            Assert.Greater(maxScore, 0.1f,
+                "vertical 4-px step pattern should produce block boundary score (y-direction detection)");
+        }
+
+        Object.DestroyImmediate(orig);
+        Object.DestroyImmediate(cand);
+        Object.DestroyImmediate(calib);
+    }
+
     static Texture2D MakeGridSteps(int n, int period)
     {
-        // x が period 倍数の境界で値が大きく変わるパターン
         var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
         var px = new Color[n * n];
         for (int y = 0; y < n; y++)
         for (int x = 0; x < n; x++)
         {
             int blk = x / period;
+            float v = (blk & 1) == 0 ? 0.2f : 0.8f;
+            px[y * n + x] = new Color(v, v, v, 1f);
+        }
+        t.SetPixels(px); t.Apply();
+        return t;
+    }
+
+    static Texture2D MakeVerticalGridSteps(int n, int period)
+    {
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false);
+        var px = new Color[n * n];
+        for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++)
+        {
+            int blk = y / period;
             float v = (blk & 1) == 0 ? 0.2f : 0.8f;
             px[y * n + x] = new Color(v, v, v, 1f);
         }

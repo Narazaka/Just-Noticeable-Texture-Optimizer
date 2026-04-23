@@ -24,6 +24,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Resolution
                 if (c.HMDPixelsPerDegree.HasValue) r.HMDPixelsPerDegree = c.HMDPixelsPerDegree.Value;
                 if (c.EncodePolicy.HasValue) r.EncodePolicy = c.EncodePolicy.Value;
                 if (c.AllowCrunched.HasValue) r.AllowCrunched = c.AllowCrunched.Value;
+                if (c.EnableChromaDrift.HasValue) r.EnableChromaDrift = c.EnableChromaDrift.Value;
                 if (c.OptimizationTarget.HasValue) r.OptimizationTarget = c.OptimizationTarget.Value;
                 if (c.Cache.HasValue) r.CacheMode = c.Cache.Value;
                 if (!string.IsNullOrEmpty(c.DebugDumpPath)) r.DebugDumpPath = c.DebugDumpPath;

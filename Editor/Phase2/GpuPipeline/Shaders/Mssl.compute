@@ -101,7 +101,7 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float candLvNext = candLv + 1.0;
         float scaleWeight = 1.0 - abs((float)dl) * 0.3;
 
-        const int SamplesPerSide = 4;
+        int SamplesPerSide = clamp(_TileSize / 4, 4, 8);
         float eO = 0.0;
         float dDiff = 0.0;
         float sumStruct = 0.0;
@@ -139,7 +139,7 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
             {
                 sumStruct += StructureLoss5x5(int2(xx, yy), origLv, candLv);
                 structCount++;
-                if (structCount >= 16) break;
+                if (structCount >= clamp(_TileSize, 16, 32)) break;
             }
         }
 

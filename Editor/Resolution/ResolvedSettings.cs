@@ -10,6 +10,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Resolution
         public float HMDPixelsPerDegree = 20f;
         public EncodePolicy EncodePolicy = EncodePolicy.Safe;
         public bool AllowCrunched = false;
+        public bool EnableChromaDrift = true;
         public OptimizationTarget OptimizationTarget = OptimizationTarget.VRAM;
         public CacheMode CacheMode = CacheMode.Full;
         public string DebugDumpPath = "";

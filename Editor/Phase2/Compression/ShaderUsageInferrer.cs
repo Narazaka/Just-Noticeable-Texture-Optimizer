@@ -18,10 +18,29 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     case "_BumpMap":
                     case "_Bump2ndMap":
                     case "_OutlineBumpMap":
+                    case "_MatCapBumpMap":
+                    case "_MatCap2ndBumpMap":
+                    case "_OutlineVectorTex":
                         return ShaderUsage.Normal;
                     case "_AlphaMask":
                     case "_EmissionBlendMask":
                     case "_Emission2ndBlendMask":
+                    case "_ShadowStrengthMask":
+                    case "_ShadowBorderMask":
+                    case "_ShadowBlurMask":
+                    case "_OutlineWidthMask":
+                    case "_MainColorAdjustMask":
+                    case "_SmoothnessTex":
+                    case "_MetallicGlossMap":
+                    case "_Bump2ndScaleMask":
+                    case "_ParallaxMap":
+                    case "_DissolveMask":
+                    case "_DissolveNoiseMask":
+                    case "_Main2ndDissolveMask":
+                    case "_Main2ndDissolveNoiseMask":
+                    case "_Main3rdDissolveMask":
+                    case "_Main3rdDissolveNoiseMask":
+                    case "_AudioLinkLocalMap":
                         return ShaderUsage.SingleChannel;
                 }
             }

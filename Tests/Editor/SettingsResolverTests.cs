@@ -104,4 +104,41 @@ public class SettingsResolverTests
         Assert.AreEqual(30f, r.HMDPixelsPerDegree);
         Assert.AreEqual(EncodePolicy.Fast, r.EncodePolicy);
     }
+
+    [Test]
+    public void Resolve_EnableChromaDrift_DefaultTrue()
+    {
+        _root = new GameObject("root");
+        _root.AddComponent<TextureOptimizer>();
+
+        var r = SettingsResolver.Resolve(_root.transform);
+        Assert.IsTrue(r.EnableChromaDrift);
+    }
+
+    [Test]
+    public void Resolve_EnableChromaDrift_OverrideToFalse()
+    {
+        _root = new GameObject("root");
+        var opt = _root.AddComponent<TextureOptimizer>();
+        opt.EnableChromaDrift = new BoolOverride { HasValue = true, Value = false };
+
+        var r = SettingsResolver.Resolve(_root.transform);
+        Assert.IsFalse(r.EnableChromaDrift);
+    }
+
+    [Test]
+    public void Resolve_EnableChromaDrift_ChildOverridesParent()
+    {
+        _root = new GameObject("root");
+        var rootOpt = _root.AddComponent<TextureOptimizer>();
+        rootOpt.EnableChromaDrift = new BoolOverride { HasValue = true, Value = true };
+
+        var child = new GameObject("child");
+        child.transform.parent = _root.transform;
+        var childOpt = child.AddComponent<TextureOptimizer>();
+        childOpt.EnableChromaDrift = new BoolOverride { HasValue = true, Value = false };
+
+        var r = SettingsResolver.Resolve(child.transform);
+        Assert.IsFalse(r.EnableChromaDrift);
+    }
 }

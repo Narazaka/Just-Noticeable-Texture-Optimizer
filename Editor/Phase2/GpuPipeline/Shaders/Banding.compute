@@ -61,19 +61,27 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         }
         if (mx - mn > 0.02) continue;
 
-        // candidate の 2 次微分
+        // candidate の 2 次微分 (水平 + 垂直、大きい方を採用)
         float cc = lum(_Candidate.SampleLevel(sampler_Candidate, uv, 0).rgb);
         float cl = lum(_Candidate.SampleLevel(sampler_Candidate, uv - float2(pxW, 0), 0).rgb);
         float cr = lum(_Candidate.SampleLevel(sampler_Candidate, uv + float2(pxW, 0), 0).rgb);
-        float d2c = cr - 2.0 * cc + cl;
+        float cu = lum(_Candidate.SampleLevel(sampler_Candidate, uv - float2(0, pxH), 0).rgb);
+        float cd = lum(_Candidate.SampleLevel(sampler_Candidate, uv + float2(0, pxH), 0).rgb);
+        float d2cx = cr - 2.0 * cc + cl;
+        float d2cy = cu - 2.0 * cc + cd;
+        float d2c = abs(d2cx) >= abs(d2cy) ? d2cx : d2cy;
         int binC = clamp((int)((d2c + 0.5) * 32), 0, 31);
         binsC[binC]++;
 
-        // orig の 2 次微分 (ベースライン)
+        // orig の 2 次微分 (水平 + 垂直、大きい方を採用)
         float oc = c;
         float ol = lum(_Orig.SampleLevel(sampler_Orig, uv - float2(pxW, 0), 0).rgb);
         float orr = lum(_Orig.SampleLevel(sampler_Orig, uv + float2(pxW, 0), 0).rgb);
-        float d2o = orr - 2.0 * oc + ol;
+        float ou = lum(_Orig.SampleLevel(sampler_Orig, uv - float2(0, pxH), 0).rgb);
+        float od = lum(_Orig.SampleLevel(sampler_Orig, uv + float2(0, pxH), 0).rgb);
+        float d2ox = orr - 2.0 * oc + ol;
+        float d2oy = ou - 2.0 * oc + od;
+        float d2o = abs(d2ox) >= abs(d2oy) ? d2ox : d2oy;
         int binO = clamp((int)((d2o + 0.5) * 32), 0, 31);
         binsO[binO]++;
 

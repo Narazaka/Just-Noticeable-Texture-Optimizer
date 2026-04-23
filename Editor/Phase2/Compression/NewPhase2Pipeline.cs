@@ -46,28 +46,28 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         readonly PerceptualGate _gate;
         readonly IMetric[] _downscaleMetrics;
         readonly IMetric[] _compressionMetrics;
+        readonly IMetric[] _jointMetrics;
         readonly ShaderUsage _usage;
         readonly bool _alphaUsed;
         readonly bool _isLinear;
 
-        public NewPhase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed)
+        public NewPhase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed,
+            bool enableChromaDrift = true)
         {
             _calib = calib;
             _gate = new PerceptualGate(calib);
             _usage = usage;
             _alphaUsed = alphaUsed;
-            _downscaleMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Downscale);
-            _compressionMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Compression);
-            // バグ#2 回帰防止: NormalMap / SingleChannel は linear color space で扱う。
+            _downscaleMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Downscale, false);
+            _compressionMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Compression, enableChromaDrift);
+            _jointMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Both, enableChromaDrift);
             _isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
         }
 
-        static IMetric[] BuildMetrics(ShaderUsage usage, bool alphaUsed, MetricContext ctx)
+        static IMetric[] BuildMetrics(ShaderUsage usage, bool alphaUsed, MetricContext ctx,
+            bool enableChromaDrift)
         {
             var list = new List<IMetric>();
-            // MSSL はダウンスケール品質評価用。圧縮 Gate では Banding/BlockBoundary が
-            // アーティファクト検出を担う。MSSL の band energy は異フォーマット間で
-            // Laplacian パターン差を検出して飽和するため圧縮コンテキストには不適。
             if (ctx == MetricContext.Downscale || ctx == MetricContext.Both)
             {
                 list.Add(new MsslMetric());
@@ -79,6 +79,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 {
                     list.Add(new BandingMetric());
                     list.Add(new BlockBoundaryMetric());
+                    if (enableChromaDrift) list.Add(new ChromaDriftMetric());
                 }
                 if (usage == ShaderUsage.Color && alphaUsed) list.Add(new AlphaQuantizationMetric());
             }
@@ -125,19 +126,19 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             var failLog = new StringBuilder();
             int tried = 0;
 
-            // r(T) が要求する最小解像度を計算: covered タイルの 95th percentile から
+            // r(T) が要求する最小解像度を計算: covered タイルの 98th percentile から
             // 全タイルの max だと 1 タイルの外れ値で全体が制約されるため、パーセンタイルを使用
             var rCovered = new List<float>();
             for (int i = 0; i < grid.Tiles.Length; i++)
                 if (grid.Tiles[i].HasCoverage && rPerTile[i] > 0f) rCovered.Add(rPerTile[i]);
             rCovered.Sort();
             float effectiveR = rCovered.Count > 0
-                ? rCovered[Mathf.Min(rCovered.Count - 1, (int)(rCovered.Count * 0.95f))]
+                ? rCovered[Mathf.Min(rCovered.Count - 1, (int)(rCovered.Count * 0.98f))]
                 : 0f;
             int minRequiredDim = Mathf.Max(DensityCalculator.MinSize,
                 DensityCalculator.CeilPowerOfTwo(Mathf.CeilToInt(effectiveR * origSize / grid.TileSize)));
 
-            UnityEngine.Debug.Log($"[JNTO/pipeline] {orig.name}: r95={effectiveR:F1}, minRequired={minRequiredDim}, origSize={origSize}");
+            UnityEngine.Debug.Log($"[JNTO/pipeline] {orig.name}: r98={effectiveR:F1}, minRequired={minRequiredDim}, origSize={origSize}");
 
             // Crunched 最適化: Crunched は非 Crunched より品質がやや劣るため
             // 独自のゲート評価が必要だが、非 Crunched で fail した場合は
@@ -225,6 +226,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 
                     // 2) compression gate if fmtDiffers
                     GateVerdict compVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
+                    Texture2D jointCandidateTex = null;
                     if (fmtDiffers)
                     {
                         var downsampled = ResolutionReducer.Resize(orig, Mathf.Max(cand.Width, cand.Height), _isLinear);
@@ -236,8 +238,6 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                             candidateTex = TextureEncodeDecode.EncodeAndDecode(
                                 downsampled, cand.Format, _isLinear, orig.format);
 
-                            // DXT5nm→BC5 変換ではチャンネル配置が変わるため、
-                            // reference にも同じ再マッピングを適用して比較を公平にする。
                             if (needsRemap)
                             {
                                 compRef = new Texture2D(downsampled.width, downsampled.height,
@@ -259,6 +259,12 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                                 compVerdict = _gate.Evaluate(refDownCtx.Original, candCtx.Original,
                                     compGrid, compRPerTile, settings.Preset, _compressionMetrics);
                             }
+
+                            if (compVerdict.Pass && sizeDiffers)
+                                jointCandidateTex = candidateTex;
+                            else
+                                Object.DestroyImmediate(candidateTex);
+                            candidateTex = null;
                         }
                         finally
                         {
@@ -278,14 +284,50 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                         }
                     }
 
-                    // 両 gate pass → gateCache に登録して採用
+                    // 3) joint gate: size+format 両方変更時、累積劣化を orig vs compressed で検証
+                    GateVerdict jointVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
+                    if (sizeDiffers && fmtDiffers && jointCandidateTex != null)
+                    {
+                        try
+                        {
+                            using (var jointCtx = GpuTextureContext.FromTexture2D(jointCandidateTex, _isLinear))
+                            {
+                                jointVerdict = _gate.Evaluate(
+                                    origCtx.Original, jointCtx.Original,
+                                    grid, rPerTile, settings.Preset, _jointMetrics);
+                            }
+                        }
+                        finally
+                        {
+                            Object.DestroyImmediate(jointCandidateTex);
+                            jointCandidateTex = null;
+                        }
+                        if (!jointVerdict.Pass)
+                        {
+                            if (referenceRt != null)
+                            {
+                                referenceRt.Release();
+                                Object.DestroyImmediate(referenceRt);
+                            }
+                            AppendFail(failLog, cand, "joint", jointVerdict);
+                            continue;
+                        }
+                    }
+                    else if (jointCandidateTex != null)
+                    {
+                        Object.DestroyImmediate(jointCandidateTex);
+                        jointCandidateTex = null;
+                    }
+
+                    // 全 gate pass → gateCache に登録して採用
                     if (referenceRt != null)
                     {
                         referenceRt.Release();
                         Object.DestroyImmediate(referenceRt);
                     }
 
-                    var finalVerdict = fmtDiffers ? compVerdict : downVerdict;
+                    var finalVerdict = jointVerdict.TextureScore > 0f ? jointVerdict
+                        : fmtDiffers ? compVerdict : downVerdict;
                     passedGate.Add((cand.Width, cand.Height, cand.Format));
 
                     Texture2D final;
@@ -304,6 +346,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     reason.Append($" after {tried}/{candidates.Count} candidates.");
                     if (sizeDiffers) reason.Append($" downscale score={downVerdict.TextureScore:F3}.");
                     if (fmtDiffers) reason.Append($" compression score={compVerdict.TextureScore:F3}.");
+                    if (jointVerdict.TextureScore > 0f) reason.Append($" joint score={jointVerdict.TextureScore:F3}.");
                     if (failLog.Length > 0) reason.Append(" Fails: [").Append(failLog).Append(']');
                     result = new NewPhase2Result
                     {

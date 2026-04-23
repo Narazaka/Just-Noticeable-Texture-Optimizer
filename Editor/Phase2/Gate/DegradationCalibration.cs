@@ -27,6 +27,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
         [Tooltip("NormalAngle (正規化済み 0-1) → JND 係数。max-per-tile で攻めすぎるため 4.0 に緩和。")]
         public float NormalAngleScale = 4.0f;
 
+        [Tooltip("ChromaDrift (CIE76 ΔE) → JND 係数。0 で無効。圧縮によるエンドポイント量子化の色相シフトを検出。")]
+        public float ChromaDriftScale = 2.5f;
+
         [Tooltip("Preset 別 JND 閾値 (tex_score < T_preset で pass)。")]
         public float ThresholdLow = 1.5f;
         public float ThresholdMedium = 1.0f;
