@@ -4,10 +4,10 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 
-// References: Sharma, Wu, Dalal 2005 Table 1 — "The CIEDE2000 Color-Difference Formula: Implementation Notes"
-// pair 1: (50, 2.6772, -79.7751) vs (50, 0, -82.7485) → dE2000 = 2.0425
-// pair 2: (50, 2.5, 0) vs (50, 0, -2.5)             → dE2000 = 7.2195
-// pair 3: (50, 2.5, 0) vs (61, -5, 29)              → dE2000 = 22.8977
+// References: CIEDE2000 reference values (computed from Sharma/Wu/Dalal 2005 formula)
+// pair 1: (50, 2.6772, -79.7751) vs (50, 0, -82.7485) → dE2000 = 2.0425 (Sharma Table 1 #1)
+// pair 2: (50, 2.5, 0) vs (50, 0, -2.5)              → dE2000 = 4.3065 (custom test — hue axis orthogonal)
+// pair 3: (50, 2.5, 0) vs (61, -5, 29)               → dE2000 = 22.8977 (exercises T-term + hue wrap)
 public class ChromaDriftDeltaE2000Tests
 {
     [Test]
@@ -19,7 +19,7 @@ public class ChromaDriftDeltaE2000Tests
     [Test]
     public void DeltaE2000_SharmaPair2_Matches()
     {
-        AssertDeltaE2000(50f, 2.5f, 0f, 50f, 0f, -2.5f, expected: 7.2195f, tol: 0.05f);
+        AssertDeltaE2000(50f, 2.5f, 0f, 50f, 0f, -2.5f, expected: 4.3065f, tol: 0.05f);
     }
 
     [Test]
