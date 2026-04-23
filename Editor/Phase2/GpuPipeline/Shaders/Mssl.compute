@@ -18,14 +18,9 @@ float _StructureScale;
 
 float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
-// 5x5 window SSIM の c(x,y)·s(x,y) 構造項。luminance 項 l は捨てる。
-// MsslMetricCpu と同じ数式 (c_term × s_term の 1 - 値 の平均):
-//   c = (2*sigA*sigB + C2) / (varA + varB + C2)
-//   s = (cov + C3) / (sigA*sigB + C3)
-//   structLoss = max(0, 1 - c*s) の window 平均。
-float StructureLoss5x5(int2 center, float lvF)
+float StructureLoss5x5(int2 center, float origLvF, float candLvF)
 {
-    const int R = 2; // 5x5
+    const int R = 2;
     const int N = 25;
     float sumA = 0.0, sumB = 0.0;
     float sumAA = 0.0, sumBB = 0.0, sumAB = 0.0;
@@ -34,8 +29,8 @@ float StructureLoss5x5(int2 center, float lvF)
     {
         float2 uv = (float2(center.x + kx, center.y + ky) + 0.5) /
                     float2((float)_TextureWidth, (float)_TextureHeight);
-        float a = lum(_Orig.SampleLevel(sampler_Orig, uv, lvF).rgb);
-        float b = lum(_Candidate.SampleLevel(sampler_Candidate, uv, lvF).rgb);
+        float a = lum(_Orig.SampleLevel(sampler_Orig, uv, origLvF).rgb);
+        float b = lum(_Candidate.SampleLevel(sampler_Candidate, uv, candLvF).rgb);
         sumA += a; sumB += b;
         sumAA += a * a; sumBB += b * b; sumAB += a * b;
     }
@@ -70,10 +65,22 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         return;
     }
 
-    float ratio = (float)_TileSize / max(r, 1e-3);
-    int targetLv = (int)floor(log2(ratio));
+    uint origW, origH, origLvCount;
+    _Orig.GetDimensions(0, origW, origH, origLvCount);
+    uint candW, candH, candLvCount;
+    _Candidate.GetDimensions(0, candW, candH, candLvCount);
 
-    // タイル範囲 (pixel 座標)
+    float origMaxDim = (float)max(origW, origH);
+    float candMaxDim = (float)max(candW, candH);
+
+    float viewingRes = r * (float)max(_TextureWidth, _TextureHeight) / (float)_TileSize;
+    float compareRes = min(origMaxDim, candMaxDim);
+
+    float origBaseLv = max(0.0, log2(origMaxDim / compareRes));
+    float candBaseLv = 0.0;
+
+    float viewOffset = max(0.0, log2(compareRes / viewingRes));
+
     int px0 = (tx * _TextureWidth) / _TilesX;
     int py0 = (ty * _TextureHeight) / _TilesY;
     int px1 = ((tx + 1) * _TextureWidth) / _TilesX;
@@ -83,10 +90,15 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     float2 tileUvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
 
     float worst = 0.0;
+
+    // --- Pass 1: 候補解像度での品質評価 (band energy + structure) ---
     for (int dl = -1; dl <= 1; dl++)
     {
-        int lv = clamp(targetLv + dl, 0, 10);
-        float lvNext = (float)(lv + 1);
+        float mipOffset = max(0.0, viewOffset + (float)dl);
+        float origLv = clamp(origBaseLv + mipOffset, 0.0, 10.0);
+        float candLv = clamp(candBaseLv + mipOffset, 0.0, 10.0);
+        float origLvNext = origLv + 1.0;
+        float candLvNext = candLv + 1.0;
         float scaleWeight = 1.0 - abs((float)dl) * 0.3;
 
         const int SamplesPerSide = 4;
@@ -95,17 +107,16 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float sumStruct = 0.0;
         int structCount = 0;
 
-        // Band Energy: Laplacian 差分の Σ(laplO - laplC)² / Σ laplO² (サブサンプル)
         for (int sy = 0; sy < SamplesPerSide; sy++)
         for (int sx = 0; sx < SamplesPerSide; sx++)
         {
             float2 local = (float2(sx, sy) + 0.5) / (float)SamplesPerSide;
             float2 uv = lerp(tileUvMin, tileUvMax, local);
 
-            float4 oLv = _Orig.SampleLevel(sampler_Orig, uv, (float)lv);
-            float4 cLv = _Candidate.SampleLevel(sampler_Candidate, uv, (float)lv);
-            float4 oLvN = _Orig.SampleLevel(sampler_Orig, uv, lvNext);
-            float4 cLvN = _Candidate.SampleLevel(sampler_Candidate, uv, lvNext);
+            float4 oLv = _Orig.SampleLevel(sampler_Orig, uv, origLv);
+            float4 cLv = _Candidate.SampleLevel(sampler_Candidate, uv, candLv);
+            float4 oLvN = _Orig.SampleLevel(sampler_Orig, uv, origLvNext);
+            float4 cLvN = _Candidate.SampleLevel(sampler_Candidate, uv, candLvNext);
 
             float laplO = lum(oLv.rgb) - lum(oLvN.rgb);
             float laplC = lum(cLv.rgb) - lum(cLvN.rgb);
@@ -114,8 +125,6 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
             dDiff += dd * dd;
         }
 
-        // Structure-only SSIM: 5x5 window で c·s を評価 (2 px step でサブサンプル)
-        // 計算量を抑えるため最大 16 window までに制限。
         int winR = 2;
         int x0 = px0 + winR;
         int y0 = py0 + winR;
@@ -128,7 +137,7 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
             for (int yy = y0; yy < y1; yy += stepY)
             for (int xx = x0; xx < x1; xx += stepX)
             {
-                sumStruct += StructureLoss5x5(int2(xx, yy), (float)lv);
+                sumStruct += StructureLoss5x5(int2(xx, yy), origLv, candLv);
                 structCount++;
                 if (structCount >= 16) break;
             }
@@ -141,6 +150,40 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float sStruct = structAvg * _StructureScale * scaleWeight;
         float s = max(sBand, sStruct);
         worst = max(worst, s);
+    }
+
+    // --- Pass 2: 視覚解像度での解像度充足チェック (downscale 時のみ) ---
+    // 候補が視覚解像度より小さい場合、orig は視覚解像度でディテールを持つが候補は持たない。
+    // Structure SSIM でこの差を検出する。
+    if (candMaxDim < viewingRes && origMaxDim > candMaxDim)
+    {
+        float origViewLv = max(0.0, log2(origMaxDim / viewingRes));
+        float candViewLv = 0.0; // 候補の最大解像度
+
+        float sumStruct2 = 0.0;
+        int count2 = 0;
+        int winR2 = 2;
+        int vx0 = px0 + winR2;
+        int vy0 = py0 + winR2;
+        int vx1 = px1 - winR2;
+        int vy1 = py1 - winR2;
+        if (vx1 > vx0 && vy1 > vy0)
+        {
+            int stepX = max(1, (vx1 - vx0) / 4);
+            int stepY = max(1, (vy1 - vy0) / 4);
+            for (int yy = vy0; yy < vy1; yy += stepY)
+            for (int xx = vx0; xx < vx1; xx += stepX)
+            {
+                sumStruct2 += StructureLoss5x5(int2(xx, yy), origViewLv, candViewLv);
+                count2++;
+                if (count2 >= 16) break;
+            }
+        }
+        if (count2 > 0)
+        {
+            float viewStructLoss = (sumStruct2 / (float)count2) * _StructureScale;
+            worst = max(worst, viewStructLoss);
+        }
     }
 
     _Scores[tileIdx] = worst;

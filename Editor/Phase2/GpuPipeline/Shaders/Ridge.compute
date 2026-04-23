@@ -17,7 +17,6 @@ float _RidgeScale;
 
 float lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
-// mip レベル M のテクセル幅 = 1 / (W >> M)
 float2 mipTexelUv(uint2 texDim, float mip)
 {
     float m = max(0.0, mip);
@@ -72,24 +71,31 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         return;
     }
 
-    float ratio = (float)_TileSize / max(r, 1e-3);
-    int targetLv = (int)floor(log2(ratio));
-
     float2 tileUvMin = float2(tx, ty) / float2(_TilesX, _TilesY);
     float2 tileUvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
 
     const int N = 6;
 
-    // バグ修正: Orig と Candidate で寸法が異なる (例: 4096 vs 32) のに pxW/pxH を
-    // _TextureWidth/Height で固定していたため、小さい Candidate の Hessian 差分が
-    // 常に 0 となり ridge loss が saturate(1.0) に張り付いていた。各テクスチャの
-    // 寸法を GetDimensions で取得し、サンプリング mip における実ピクセル幅を使う。
     uint origW, origH, origLv;
     _Orig.GetDimensions(0, origW, origH, origLv);
     uint candW, candH, candLv;
     _Candidate.GetDimensions(0, candW, candH, candLv);
-    float2 origPx = mipTexelUv(uint2(origW, origH), (float)targetLv);
-    float2 candPx = mipTexelUv(uint2(candW, candH), (float)targetLv);
+
+    float origMaxDim = (float)max(origW, origH);
+    float candMaxDim = (float)max(candW, candH);
+
+    // 候補解像度を基準に比較: orig のダウンサンプル結果 vs candidate
+    float compareRes = min(origMaxDim, candMaxDim);
+    float origMip = max(0.0, log2(origMaxDim / compareRes));
+    float candMip = 0.0;
+
+    float viewingRes = r * (float)max(_TextureWidth, _TextureHeight) / (float)_TileSize;
+    float viewOffset = max(0.0, log2(compareRes / viewingRes));
+    origMip = max(0.0, origMip + viewOffset);
+    candMip = max(0.0, candMip + viewOffset);
+
+    float2 origPx = mipTexelUv(uint2(origW, origH), origMip);
+    float2 candPx = mipTexelUv(uint2(candW, candH), candMip);
 
     float sumO = 0.0, sumC = 0.0, sumDiff = 0.0;
     int count = 0;
@@ -98,8 +104,8 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     {
         float2 local = (float2(sx, sy) + 0.5) / (float)N;
         float2 uv = lerp(tileUvMin, tileUvMax, local);
-        float rO = ridgeness(_Orig, sampler_Orig, uv, origPx.x, origPx.y, (float)targetLv);
-        float rC = ridgeness(_Candidate, sampler_Candidate, uv, candPx.x, candPx.y, (float)targetLv);
+        float rO = ridgeness(_Orig, sampler_Orig, uv, origPx.x, origPx.y, origMip);
+        float rC = ridgeness(_Candidate, sampler_Candidate, uv, candPx.x, candPx.y, candMip);
         sumO += rO;
         sumC += rC;
         sumDiff += abs(rO - rC);

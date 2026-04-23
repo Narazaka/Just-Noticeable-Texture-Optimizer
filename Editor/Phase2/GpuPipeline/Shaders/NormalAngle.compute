@@ -34,19 +34,40 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
     if (tx >= _TilesX || ty >= _TilesY) return;
 
     int tileIdx = ty * _TilesX + tx;
-    if (_RPerTile[tileIdx] <= 0.0)
+    float r = _RPerTile[tileIdx];
+    if (r <= 0.0)
     {
         _Scores[tileIdx] = 0.0;
         return;
     }
 
+    // 候補解像度ベースの mip レベル (MSSL と同じロジック)
+    uint origW, origH, origLvCount;
+    _Orig.GetDimensions(0, origW, origH, origLvCount);
+    uint candW, candH, candLvCount;
+    _Candidate.GetDimensions(0, candW, candH, candLvCount);
+
+    float origMaxDim = (float)max(origW, origH);
+    float candMaxDim = (float)max(candW, candH);
+    float compareRes = min(origMaxDim, candMaxDim);
+
+    float origMip = max(0.0, log2(origMaxDim / compareRes));
+    float candMip = 0.0;
+
+    float viewingRes = r * (float)max(_TextureWidth, _TextureHeight) / (float)_TileSize;
+    float viewOffset = max(0.0, log2(compareRes / viewingRes));
+    origMip = max(0.0, origMip + viewOffset);
+    candMip = max(0.0, candMip + viewOffset);
+
     float2 uvMin = float2(tx, ty) / float2(_TilesX, _TilesY);
     float2 uvMax = float2(tx + 1, ty + 1) / float2(_TilesX, _TilesY);
 
     const int N = 16;
-    float maxScore = 0.0;
-
     const float HALF_PI = 1.5707963267948966;
+
+    // top-K 平均: 上位 10% (= 26 サンプル中 top-3) の平均で外れ値耐性を確保
+    float sum = 0.0;
+    float top1 = 0.0, top2 = 0.0, top3 = 0.0;
 
     for (int sy = 0; sy < N; sy++)
     for (int sx = 0; sx < N; sx++)
@@ -54,14 +75,19 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float2 local = (float2(sx, sy) + 0.5) / (float)N;
         float2 uv = lerp(uvMin, uvMax, local);
 
-        float3 nO = decodeNormal(_Orig.SampleLevel(sampler_Orig, uv, 0));
-        float3 nC = decodeNormal(_Candidate.SampleLevel(sampler_Candidate, uv, 0));
+        float3 nO = decodeNormal(_Orig.SampleLevel(sampler_Orig, uv, origMip));
+        float3 nC = decodeNormal(_Candidate.SampleLevel(sampler_Candidate, uv, candMip));
 
         float d = clamp(dot(nO, nC), -1.0, 1.0);
         float angle = acos(d);
         float s = saturate(angle / HALF_PI);
-        maxScore = max(maxScore, s);
+        sum += s;
+
+        if (s > top1) { top3 = top2; top2 = top1; top1 = s; }
+        else if (s > top2) { top3 = top2; top2 = s; }
+        else if (s > top3) { top3 = s; }
     }
 
-    _Scores[tileIdx] = maxScore * _NormalAngleScale;
+    float topKAvg = (top1 + top2 + top3) / 3.0;
+    _Scores[tileIdx] = topKAvg * _NormalAngleScale;
 }
