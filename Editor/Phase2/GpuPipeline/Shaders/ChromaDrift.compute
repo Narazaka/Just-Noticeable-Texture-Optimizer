@@ -43,10 +43,67 @@ float3 toLab(float3 xyz)
     return float3(L, a, b);
 }
 
-float deltaE76(float3 lab1, float3 lab2)
+// CIEDE2000 (Sharma/Wu/Dalal 2005). "1.0 = 1 JND" 前提で設計されているので /2.3 は不要。
+float deltaE2000(float3 lab1, float3 lab2)
 {
-    float3 d = lab1 - lab2;
-    return sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+    const float PI = 3.14159265358979323846;
+    const float DEG = 180.0 / PI;
+    const float RAD = PI / 180.0;
+
+    float L1 = lab1.x, a1 = lab1.y, b1 = lab1.z;
+    float L2 = lab2.x, a2 = lab2.y, b2 = lab2.z;
+
+    float C1 = sqrt(a1 * a1 + b1 * b1);
+    float C2 = sqrt(a2 * a2 + b2 * b2);
+    float Cbar = 0.5 * (C1 + C2);
+    float Cbar7 = pow(Cbar, 7.0);
+    float G = 0.5 * (1.0 - sqrt(Cbar7 / (Cbar7 + pow(25.0, 7.0))));
+    float a1p = (1.0 + G) * a1;
+    float a2p = (1.0 + G) * a2;
+    float C1p = sqrt(a1p * a1p + b1 * b1);
+    float C2p = sqrt(a2p * a2p + b2 * b2);
+
+    float h1p = atan2(b1, a1p) * DEG; if (h1p < 0.0) h1p += 360.0;
+    float h2p = atan2(b2, a2p) * DEG; if (h2p < 0.0) h2p += 360.0;
+
+    float dLp = L2 - L1;
+    float dCp = C2p - C1p;
+
+    float dhp = 0.0;
+    if (C1p * C2p != 0.0)
+    {
+        dhp = h2p - h1p;
+        if (dhp > 180.0) dhp -= 360.0;
+        else if (dhp < -180.0) dhp += 360.0;
+    }
+    float dHp = 2.0 * sqrt(C1p * C2p) * sin(dhp * 0.5 * RAD);
+
+    float Lbarp = 0.5 * (L1 + L2);
+    float Cbarp = 0.5 * (C1p + C2p);
+    float hbarp;
+    if (C1p * C2p == 0.0) hbarp = h1p + h2p;
+    else if (abs(h1p - h2p) <= 180.0) hbarp = 0.5 * (h1p + h2p);
+    else hbarp = (h1p + h2p < 360.0) ? 0.5 * (h1p + h2p + 360.0) : 0.5 * (h1p + h2p - 360.0);
+
+    float T = 1.0
+        - 0.17 * cos((hbarp - 30.0) * RAD)
+        + 0.24 * cos((2.0 * hbarp) * RAD)
+        + 0.32 * cos((3.0 * hbarp + 6.0) * RAD)
+        - 0.20 * cos((4.0 * hbarp - 63.0) * RAD);
+
+    float dTheta = 30.0 * exp(-pow((hbarp - 275.0) / 25.0, 2.0));
+    float Cbarp7 = pow(Cbarp, 7.0);
+    float Rc = 2.0 * sqrt(Cbarp7 / (Cbarp7 + pow(25.0, 7.0)));
+    float Sl = 1.0 + (0.015 * pow(Lbarp - 50.0, 2.0)) / sqrt(20.0 + pow(Lbarp - 50.0, 2.0));
+    float Sc = 1.0 + 0.045 * Cbarp;
+    float Sh = 1.0 + 0.015 * Cbarp * T;
+    float Rt = -sin(2.0 * dTheta * RAD) * Rc;
+
+    float tL = dLp / Sl;
+    float tC = dCp / Sc;
+    float tH = dHp / Sh;
+
+    return sqrt(tL * tL + tC * tC + tH * tH + Rt * tC * tH);
 }
 
 [numthreads(8, 8, 1)]
@@ -84,8 +141,8 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float3 labO = toLab(toXYZ(rgbO));
         float3 labC = toLab(toXYZ(rgbC));
 
-        // ΔE76 を JND 正規化 (ΔE=2.3 が JND 1.0 に相当)
-        float de = deltaE76(labO, labC) / 2.3;
+        // ΔE2000 は "1.0 = 1 JND" として設計されているので divisor 不要。
+        float de = deltaE2000(labO, labC);
 
         if (de > top1) { top3 = top2; top2 = top1; top1 = de; }
         else if (de > top2) { top3 = top2; top2 = de; }
