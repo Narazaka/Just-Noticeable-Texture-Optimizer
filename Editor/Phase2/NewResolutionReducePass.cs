@@ -209,24 +209,25 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     {
                         Profiler.EndSample();
                     }
-
-                    Reporting.DecisionLog.Add(new Reporting.DecisionRecord
-                    {
-                        OriginalTexture = tex,
-                        OrigSize = Mathf.Max(tex.width, tex.height),
-                        FinalSize = result.Size,
-                        OrigFormat = tex.format,
-                        FinalFormat = result.Format,
-                        SavedBytes = EstimateSavedBytes(tex, result),
-                        TextureScore = result.FinalVerdict.TextureScore,
-                        DominantMetric = result.FinalVerdict.DominantMetric ?? "-",
-                        DominantMipLevel = result.FinalVerdict.DominantMipLevel,
-                        WorstTileIndex = result.FinalVerdict.WorstTileIndex,
-                        CacheHit = false,
-                        ProcessingMs = result.ProcessingMs,
-                        Reason = result.DecisionReason,
-                    });
                 }
+
+                // no-op であっても DecisionLog には残す (どのテクスチャが kept か可視化)。
+                Reporting.DecisionLog.Add(new Reporting.DecisionRecord
+                {
+                    OriginalTexture = tex,
+                    OrigSize = Mathf.Max(tex.width, tex.height),
+                    FinalSize = result.Size,
+                    OrigFormat = tex.format,
+                    FinalFormat = result.Format,
+                    SavedBytes = EstimateSavedBytes(tex, result),
+                    TextureScore = result.FinalVerdict.TextureScore,
+                    DominantMetric = result.FinalVerdict.DominantMetric ?? "-",
+                    DominantMipLevel = result.FinalVerdict.DominantMipLevel,
+                    WorstTileIndex = result.FinalVerdict.WorstTileIndex,
+                    CacheHit = false,
+                    ProcessingMs = result.ProcessingMs,
+                    Reason = result.DecisionReason,
+                });
             }
             finally
             {

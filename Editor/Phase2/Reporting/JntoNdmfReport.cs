@@ -19,6 +19,21 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Reporting
         public static void Emit()
         {
             var records = DecisionLog.All;
+            // debug: 常に file 出力 (records.Count が 0 でも痕跡を残す)。
+            try
+            {
+                var debugPath0 = "AIBridgeCache/jnto_last_bake.txt";
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(debugPath0) ?? ".");
+                var sb0 = new System.Text.StringBuilder();
+                sb0.AppendLine($"[JNTO/emit] records.Count={(records == null ? -1 : records.Count)}");
+                if (records != null) foreach (var r in records)
+                {
+                    sb0.AppendLine(DecisionLog.Format(r));
+                    if (!string.IsNullOrEmpty(r.Reason)) sb0.AppendLine("    Reason: " + r.Reason);
+                }
+                System.IO.File.WriteAllText(debugPath0, sb0.ToString());
+            }
+            catch { /* best-effort */ }
             if (records == null || records.Count == 0) return;
 
             long totalSaved = 0;
@@ -40,6 +55,14 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Reporting
 
             // summary は常に Debug.Log で出しておく (NDMF Error Report ウィンドウを開かなくても確認できる)。
             Debug.Log(summary);
+            // debug: summary を既存 dump file に prepend する (Reason 含む行は上の try block で書いた)。
+            try
+            {
+                var debugPath = "AIBridgeCache/jnto_last_bake.txt";
+                var existing = System.IO.File.Exists(debugPath) ? System.IO.File.ReadAllText(debugPath) : "";
+                System.IO.File.WriteAllText(debugPath, summary + "\n" + existing);
+            }
+            catch { /* best-effort */ }
 
             // ErrorReport へ投函: summary 1 件 + 各 record。
             // NDMF 側は CurrentReport が null なら Debug.LogWarning で代替する (追加の Warn ログが出る)。
