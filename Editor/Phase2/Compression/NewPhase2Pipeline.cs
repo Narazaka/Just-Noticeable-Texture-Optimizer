@@ -486,6 +486,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     TextureEncodeDecode.RemapDxt5nmForBC5(tex);
                 UnityEditor.EditorUtility.CompressTexture(tex, fmt,
                     UnityEditor.TextureCompressionQuality.Normal);
+                TextureEncodeDecode.EnableStreamingMipmaps(tex);
                 return tex;
             }
             finally

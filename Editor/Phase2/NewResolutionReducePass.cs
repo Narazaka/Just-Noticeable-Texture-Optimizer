@@ -273,6 +273,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 t.name = orig.name + "_cached";
                 t.LoadRawTextureData(cached.CompressedRawBytes);
                 t.Apply(updateMipmaps: false);
+                Compression.TextureEncodeDecode.EnableStreamingMipmaps(t);
                 return t;
             }
             catch

@@ -5,6 +5,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 {
     public static class TextureEncodeDecode
     {
+        public static void EnableStreamingMipmaps(Texture2D tex)
+        {
+            var so = new SerializedObject(tex);
+            var sp = so.FindProperty("m_StreamingMipmaps");
+            if (sp != null)
+            {
+                sp.boolValue = true;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
         /// <summary>
         /// DXT5nm → BC5 変換時に必要なチャンネル再マッピング。
         /// DXT5nm は X=Alpha, Y=Green で格納するが、BC5 は R,G の 2ch のみ。

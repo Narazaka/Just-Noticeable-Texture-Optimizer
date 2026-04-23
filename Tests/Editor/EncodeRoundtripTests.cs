@@ -42,4 +42,17 @@ public class EncodeRoundtripTests
         }
         finally { Object.DestroyImmediate(src); }
     }
+
+    [Test]
+    public void EnableStreamingMipmaps_SetsPropertyOnRuntimeTexture()
+    {
+        var tex = new Texture2D(64, 64, TextureFormat.RGBA32, true);
+        try
+        {
+            Assert.IsFalse(tex.streamingMipmaps, "default should be false");
+            TextureEncodeDecode.EnableStreamingMipmaps(tex);
+            Assert.IsTrue(tex.streamingMipmaps, "should be true after EnableStreamingMipmaps");
+        }
+        finally { Object.DestroyImmediate(tex); }
+    }
 }
