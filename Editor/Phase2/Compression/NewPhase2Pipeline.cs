@@ -128,8 +128,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     Width = orig.width,
                     Height = orig.height,
                     Format = orig.format,
-                    FinalVerdict = new GateVerdict { Pass = false, TextureScore = 0f, WorstTileIndex = -1, DominantMetric = null, DominantMipLevel = -1 },
-                    DecisionReason = "skipped: no tile coverage (cannot evaluate)",
+                    FinalVerdict = new GateVerdict { Pass = true, TextureScore = 0f, WorstTileIndex = -1, DominantMetric = null, DominantMipLevel = -1 },
+                    DecisionReason = "kept original: no evaluable tile coverage",
                     ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
                 };
             }
