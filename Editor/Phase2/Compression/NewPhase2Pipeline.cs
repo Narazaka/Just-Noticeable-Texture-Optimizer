@@ -65,15 +65,21 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         static IMetric[] BuildMetrics(ShaderUsage usage, bool alphaUsed, MetricContext ctx)
         {
             var list = new List<IMetric>();
-            list.Add(new MsslMetric());
+            // MSSL はダウンスケール品質評価用。圧縮 Gate では Banding/BlockBoundary が
+            // アーティファクト検出を担う。MSSL の band energy は異フォーマット間で
+            // Laplacian パターン差を検出して飽和するため圧縮コンテキストには不適。
             if (ctx == MetricContext.Downscale || ctx == MetricContext.Both)
             {
+                list.Add(new MsslMetric());
                 list.Add(new RidgeMetric());
             }
             if (ctx == MetricContext.Compression || ctx == MetricContext.Both)
             {
-                list.Add(new BandingMetric());
-                list.Add(new BlockBoundaryMetric());
+                if (usage != ShaderUsage.Normal)
+                {
+                    list.Add(new BandingMetric());
+                    list.Add(new BlockBoundaryMetric());
+                }
                 if (usage == ShaderUsage.Color && alphaUsed) list.Add(new AlphaQuantizationMetric());
             }
             if (usage == ShaderUsage.Normal) list.Add(new NormalAngleMetric());
@@ -109,13 +115,35 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 };
             }
 
-            var fmts = FormatCandidateSelector.Select(orig.format, _usage, _alphaUsed);
+            var fmts = FormatCandidateSelector.Select(orig.format, _usage, _alphaUsed,
+                settings.AllowCrunched);
             var candidates = CompressionCandidateEnumerator.Enumerate(
-                orig.width, orig.height, orig.format, fmts, DensityCalculator.MinSize);
+                orig.width, orig.height, orig.format, fmts, DensityCalculator.MinSize,
+                settings.OptimizationTarget);
 
             NewPhase2Result result = null;
             var failLog = new StringBuilder();
             int tried = 0;
+
+            // r(T) が要求する最小解像度を計算: covered タイルの 95th percentile から
+            // 全タイルの max だと 1 タイルの外れ値で全体が制約されるため、パーセンタイルを使用
+            var rCovered = new List<float>();
+            for (int i = 0; i < grid.Tiles.Length; i++)
+                if (grid.Tiles[i].HasCoverage && rPerTile[i] > 0f) rCovered.Add(rPerTile[i]);
+            rCovered.Sort();
+            float effectiveR = rCovered.Count > 0
+                ? rCovered[Mathf.Min(rCovered.Count - 1, (int)(rCovered.Count * 0.95f))]
+                : 0f;
+            int minRequiredDim = Mathf.Max(DensityCalculator.MinSize,
+                DensityCalculator.CeilPowerOfTwo(Mathf.CeilToInt(effectiveR * origSize / grid.TileSize)));
+
+            UnityEngine.Debug.Log($"[JNTO/pipeline] {orig.name}: r95={effectiveR:F1}, minRequired={minRequiredDim}, origSize={origSize}");
+
+            // Crunched 最適化: Crunched は非 Crunched より品質がやや劣るため
+            // 独自のゲート評価が必要だが、非 Crunched で fail した場合は
+            // Crunched も必ず fail するためスキップできる。
+            // key = (width, height, baseFmt)
+            var passedGate = new HashSet<(int, int, TextureFormat)>();
 
             Profiler.BeginSample("JNTO.CandidateLoop");
             try
@@ -142,6 +170,34 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                             ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
                         };
                         return result;
+                    }
+
+                    // r(T) が要求する解像度に満たない候補はスキップ
+                    int candMaxDim = Mathf.Max(cand.Width, cand.Height);
+                    if (candMaxDim < minRequiredDim)
+                    {
+                        AppendFail(failLog, cand, "resolution",
+                            new GateVerdict { TextureScore = -1f, DominantMetric = $"need>={minRequiredDim}" });
+                        continue;
+                    }
+
+                    // Crunched 候補: 非 Crunched で fail したサイズ+フォーマットは
+                    // Crunched でも必ず fail (品質は同等か劣る) のでスキップ。
+                    // 非 Crunched で pass したことを確認してからゲート評価を行う。
+                    bool isCrunched = cand.Format == TextureFormat.DXT1Crunched
+                        || cand.Format == TextureFormat.DXT5Crunched;
+                    if (isCrunched)
+                    {
+                        var baseFmt = cand.Format == TextureFormat.DXT1Crunched
+                            ? TextureFormat.DXT1 : TextureFormat.DXT5;
+                        if (!passedGate.Contains((cand.Width, cand.Height, baseFmt)))
+                        {
+                            AppendFail(failLog, cand, "crunch-skip",
+                                new GateVerdict { TextureScore = -1f, DominantMetric = $"base {baseFmt} not passed" });
+                            continue;
+                        }
+                        // 非 Crunched は pass 済み → 以降の通常ゲート評価に進む
+                        // (Crunch 品質劣化がゲートを通るか確認)
                     }
 
                     bool sizeDiffers = (cand.Width != orig.width || cand.Height != orig.height);
@@ -171,22 +227,43 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     GateVerdict compVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
                     if (fmtDiffers)
                     {
-                        // reference = downsampled Texture2D (CompressTexture に必要)
-                        var downsampled = ResolutionReducer.Resize(orig, Mathf.Max(cand.Width, cand.Height));
+                        var downsampled = ResolutionReducer.Resize(orig, Mathf.Max(cand.Width, cand.Height), _isLinear);
                         Texture2D candidateTex = null;
+                        Texture2D compRef = null;
                         try
                         {
-                            candidateTex = TextureEncodeDecode.EncodeAndDecode(downsampled, cand.Format);
+                            bool needsRemap = TextureEncodeDecode.NeedsDxt5nmToBC5Remap(orig.format, cand.Format);
+                            candidateTex = TextureEncodeDecode.EncodeAndDecode(
+                                downsampled, cand.Format, _isLinear, orig.format);
+
+                            // DXT5nm→BC5 変換ではチャンネル配置が変わるため、
+                            // reference にも同じ再マッピングを適用して比較を公平にする。
+                            if (needsRemap)
+                            {
+                                compRef = new Texture2D(downsampled.width, downsampled.height,
+                                    TextureFormat.RGBA32, false, _isLinear);
+                                compRef.SetPixels(downsampled.GetPixels());
+                                compRef.Apply();
+                                TextureEncodeDecode.RemapDxt5nmForBC5(compRef);
+                            }
+
+                            var compGrid = RemapGrid(grid, rPerTile, cand.Width, cand.Height,
+                                settings, out var compRPerTile);
+                            for (int ti = 0; ti < compRPerTile.Length; ti++)
+                                if (compGrid.Tiles[ti].HasCoverage) compRPerTile[ti] = compGrid.TileSize;
+
+                            var refTex = compRef != null ? compRef : downsampled;
                             using (var candCtx = GpuTextureContext.FromTexture2D(candidateTex, _isLinear))
-                            using (var refDownCtx = GpuTextureContext.FromTexture2D(downsampled, _isLinear))
+                            using (var refDownCtx = GpuTextureContext.FromTexture2D(refTex, _isLinear))
                             {
                                 compVerdict = _gate.Evaluate(refDownCtx.Original, candCtx.Original,
-                                    grid, rPerTile, settings.Preset, _compressionMetrics);
+                                    compGrid, compRPerTile, settings.Preset, _compressionMetrics);
                             }
                         }
                         finally
                         {
                             if (candidateTex != null) Object.DestroyImmediate(candidateTex);
+                            if (compRef != null) Object.DestroyImmediate(compRef);
                             Object.DestroyImmediate(downsampled);
                         }
                         if (!compVerdict.Pass)
@@ -201,23 +278,25 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                         }
                     }
 
-                    // 両 gate pass → 採用、encode して return
+                    // 両 gate pass → gateCache に登録して採用
                     if (referenceRt != null)
                     {
                         referenceRt.Release();
                         Object.DestroyImmediate(referenceRt);
                     }
 
+                    var finalVerdict = fmtDiffers ? compVerdict : downVerdict;
+                    passedGate.Add((cand.Width, cand.Height, cand.Format));
+
                     Texture2D final;
                     Profiler.BeginSample("JNTO.FinalEncode");
                     try
                     {
-                        final = Encode(orig, cand.Width, cand.Height, cand.Format);
+                        final = Encode(orig, cand.Width, cand.Height, cand.Format, _isLinear, orig.format);
                     }
                     finally { Profiler.EndSample(); }
 
                     sw.Stop();
-                    var finalVerdict = fmtDiffers ? compVerdict : downVerdict;
                     var reason = new StringBuilder();
                     reason.Append("accepted ");
                     reason.Append(cand.Format).Append('@').Append(cand.Width).Append('x').Append(cand.Height);
@@ -266,16 +345,62 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 sb.Append(" metric=").Append(v.DominantMetric);
         }
 
-        static Texture2D Encode(Texture2D src, int width, int height, TextureFormat fmt)
+        static UvTileGrid RemapGrid(
+            UvTileGrid srcGrid, float[] srcRPerTile,
+            int dstWidth, int dstHeight,
+            ResolvedSettings settings, out float[] dstRPerTile)
+        {
+            var dst = UvTileGrid.Create(dstWidth, dstHeight);
+            dstRPerTile = new float[dst.Tiles.Length];
+
+            for (int dy = 0; dy < dst.TilesY; dy++)
+            for (int dx = 0; dx < dst.TilesX; dx++)
+            {
+                float uMin = (float)dx / dst.TilesX;
+                float uMax = (float)(dx + 1) / dst.TilesX;
+                float vMin = (float)dy / dst.TilesY;
+                float vMax = (float)(dy + 1) / dst.TilesY;
+
+                int sxMin = Mathf.Clamp(Mathf.FloorToInt(uMin * srcGrid.TilesX), 0, srcGrid.TilesX - 1);
+                int sxMax = Mathf.Clamp(Mathf.FloorToInt(uMax * srcGrid.TilesX - 0.001f), 0, srcGrid.TilesX - 1);
+                int syMin = Mathf.Clamp(Mathf.FloorToInt(vMin * srcGrid.TilesY), 0, srcGrid.TilesY - 1);
+                int syMax = Mathf.Clamp(Mathf.FloorToInt(vMax * srcGrid.TilesY - 0.001f), 0, srcGrid.TilesY - 1);
+
+                ref var tile = ref dst.GetTile(dx, dy);
+                int dstIdx = dy * dst.TilesX + dx;
+
+                for (int sy = syMin; sy <= syMax; sy++)
+                for (int sx = sxMin; sx <= sxMax; sx++)
+                {
+                    int srcIdx = sy * srcGrid.TilesX + sx;
+                    var srcTile = srcGrid.Tiles[srcIdx];
+                    if (srcTile.HasCoverage) tile.HasCoverage = true;
+                    if (srcTile.Density > tile.Density) tile.Density = srcTile.Density;
+                    if (srcTile.BoneWeight > tile.BoneWeight) tile.BoneWeight = srcTile.BoneWeight;
+                }
+
+                dstRPerTile[dstIdx] = tile.HasCoverage
+                    ? EffectiveResolutionCalculator.ComputeR(
+                        tile, dst.TileSize, dstWidth, dstHeight,
+                        settings.ViewDistanceCm, settings.HMDPixelsPerDegree, settings.Preset)
+                    : 0f;
+            }
+            return dst;
+        }
+
+        static Texture2D Encode(Texture2D src, int width, int height, TextureFormat fmt,
+            bool isLinear, TextureFormat srcOriginalFormat = TextureFormat.RGBA32)
         {
             int targetMaxDim = Mathf.Max(width, height);
-            var resized = ResolutionReducer.Resize(src, targetMaxDim);
+            var resized = ResolutionReducer.Resize(src, targetMaxDim, isLinear);
             try
             {
-                var tex = new Texture2D(resized.width, resized.height, TextureFormat.RGBA32, true);
+                var tex = new Texture2D(resized.width, resized.height, TextureFormat.RGBA32, true, isLinear);
                 tex.name = $"{src.name}_{resized.width}x{resized.height}_{fmt}";
                 tex.SetPixels(resized.GetPixels());
                 tex.Apply(updateMipmaps: true);
+                if (TextureEncodeDecode.NeedsDxt5nmToBC5Remap(srcOriginalFormat, fmt))
+                    TextureEncodeDecode.RemapDxt5nmForBC5(tex);
                 UnityEditor.EditorUtility.CompressTexture(tex, fmt,
                     UnityEditor.TextureCompressionQuality.Normal);
                 return tex;
