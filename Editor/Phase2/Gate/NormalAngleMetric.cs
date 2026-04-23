@@ -14,6 +14,11 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
         public string Name => "NormalAngle";
         public MetricContext Context => MetricContext.Both;
 
+        /// <summary>0 = standard RG, 1 = DXT5nm AG (X in Alpha, Y in Green)</summary>
+        public int OrigChannelMapping;
+        /// <summary>0 = standard RG, 1 = DXT5nm AG (X in Alpha, Y in Green)</summary>
+        public int CandChannelMapping;
+
         public void Evaluate(
             RenderTexture orig, RenderTexture candidate,
             UvTileGrid grid, float[] rPerTile,
@@ -40,6 +45,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Gate
                 cs.SetInt("_TextureWidth", grid.TextureWidth);
                 cs.SetInt("_TextureHeight", grid.TextureHeight);
                 cs.SetFloat("_NormalAngleScale", calib.NormalAngleScale);
+                cs.SetInt("_OrigChannelMapping", OrigChannelMapping);
+                cs.SetInt("_CandChannelMapping", CandChannelMapping);
 
                 int gx = Mathf.CeilToInt(grid.TilesX / 8f);
                 int gy = Mathf.CeilToInt(grid.TilesY / 8f);

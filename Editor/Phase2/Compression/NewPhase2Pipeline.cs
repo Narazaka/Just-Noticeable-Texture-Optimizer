@@ -50,9 +50,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         readonly ShaderUsage _usage;
         readonly bool _alphaUsed;
         readonly bool _isLinear;
+        readonly TextureFormat _origFormat;
 
         public NewPhase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed,
-            bool enableChromaDrift = true)
+            bool enableChromaDrift = true, TextureFormat origFormat = TextureFormat.RGBA32)
         {
             _calib = calib;
             _gate = new PerceptualGate(calib);
@@ -62,6 +63,22 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             _compressionMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Compression, enableChromaDrift);
             _jointMetrics = BuildMetrics(usage, alphaUsed, MetricContext.Both, enableChromaDrift);
             _isLinear = usage == ShaderUsage.Normal || usage == ShaderUsage.SingleChannel;
+            _origFormat = origFormat;
+        }
+
+        static bool IsDxt5nmFormat(TextureFormat fmt)
+            => fmt == TextureFormat.DXT5 || fmt == TextureFormat.DXT5Crunched;
+
+        static void SetNormalChannelMappings(IMetric[] metrics, int origMapping, int candMapping)
+        {
+            foreach (var m in metrics)
+            {
+                if (m is NormalAngleMetric nam)
+                {
+                    nam.OrigChannelMapping = origMapping;
+                    nam.CandChannelMapping = candMapping;
+                }
+            }
         }
 
         static IMetric[] BuildMetrics(ShaderUsage usage, bool alphaUsed, MetricContext ctx,
@@ -115,6 +132,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     ProcessingMs = (float)sw.Elapsed.TotalMilliseconds,
                 };
             }
+
+            // DXT5nm channel mapping for normal maps
+            bool origIsDxt5nm = _usage == ShaderUsage.Normal && IsDxt5nmFormat(_origFormat);
+            int dxt5nmMapping = origIsDxt5nm ? 1 : 0;
 
             var fmts = FormatCandidateSelector.Select(orig.format, _usage, _alphaUsed,
                 settings.AllowCrunched);
@@ -205,6 +226,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     bool fmtDiffers = (cand.Format != orig.format);
 
                     // 1) downscale gate if sizeDiffers
+                    // Both orig and candidate are the same texture at different mip levels,
+                    // so both use the same channel mapping.
+                    SetNormalChannelMappings(_downscaleMetrics, dxt5nmMapping, dxt5nmMapping);
+
                     GateVerdict downVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
                     RenderTexture referenceRt = null;
                     if (sizeDiffers)
@@ -227,6 +252,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     // 2) compression gate if fmtDiffers
                     GateVerdict compVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
                     Texture2D jointCandidateTex = null;
+                    bool candidateRemapped = false;
                     if (fmtDiffers)
                     {
                         var downsampled = ResolutionReducer.Resize(orig, Mathf.Max(cand.Width, cand.Height), _isLinear);
@@ -235,6 +261,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                         try
                         {
                             bool needsRemap = TextureEncodeDecode.NeedsDxt5nmToBC5Remap(orig.format, cand.Format);
+                            candidateRemapped = needsRemap;
                             candidateTex = TextureEncodeDecode.EncodeAndDecode(
                                 downsampled, cand.Format, _isLinear, orig.format);
 
@@ -251,6 +278,13 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                                 settings, out var compRPerTile);
                             for (int ti = 0; ti < compRPerTile.Length; ti++)
                                 if (compGrid.Tiles[ti].HasCoverage) compRPerTile[ti] = compGrid.TileSize;
+
+                            // Compression gate channel mappings:
+                            // When needsRemap (DXT5nm→BC5), both ref and candidate are
+                            // remapped to standard RG layout, so mapping=0.
+                            // Otherwise both use the original DXT5nm mapping.
+                            int compMapping = needsRemap ? 0 : dxt5nmMapping;
+                            SetNormalChannelMappings(_compressionMetrics, compMapping, compMapping);
 
                             var refTex = compRef != null ? compRef : downsampled;
                             using (var candCtx = GpuTextureContext.FromTexture2D(candidateTex, _isLinear))
@@ -285,6 +319,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     }
 
                     // 3) joint gate: size+format 両方変更時、累積劣化を orig vs compressed で検証
+                    // Joint gate compares original (DXT5nm layout) vs candidate (remapped to RG if BC5, else DXT5nm).
+                    int jointCandMapping = candidateRemapped ? 0 : dxt5nmMapping;
+                    SetNormalChannelMappings(_jointMetrics, dxt5nmMapping, jointCandMapping);
+
                     GateVerdict jointVerdict = new GateVerdict { Pass = true, TextureScore = 0f };
                     if (sizeDiffers && fmtDiffers && jointCandidateTex != null)
                     {

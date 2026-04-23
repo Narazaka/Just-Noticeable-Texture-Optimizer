@@ -14,10 +14,12 @@ int _TileSize;
 int _TextureWidth;
 int _TextureHeight;
 float _NormalAngleScale;
+int _OrigChannelMapping;   // 0 = standard RG, 1 = DXT5nm AG (X in Alpha, Y in Green)
+int _CandChannelMapping;
 
-float3 decodeNormal(float4 c)
+float3 decodeNormalMapped(float4 c, int mapping)
 {
-    float nx = c.r * 2.0 - 1.0;
+    float nx = (mapping == 1 ? c.a : c.r) * 2.0 - 1.0;
     float ny = c.g * 2.0 - 1.0;
     float nz2 = max(0.0, 1.0 - nx * nx - ny * ny);
     float nz = sqrt(nz2);
@@ -75,8 +77,8 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float2 local = (float2(sx, sy) + 0.5) / (float)N;
         float2 uv = lerp(uvMin, uvMax, local);
 
-        float3 nO = decodeNormal(_Orig.SampleLevel(sampler_Orig, uv, origMip));
-        float3 nC = decodeNormal(_Candidate.SampleLevel(sampler_Candidate, uv, candMip));
+        float3 nO = decodeNormalMapped(_Orig.SampleLevel(sampler_Orig, uv, origMip), _OrigChannelMapping);
+        float3 nC = decodeNormalMapped(_Candidate.SampleLevel(sampler_Candidate, uv, candMip), _CandChannelMapping);
 
         float d = clamp(dot(nO, nC), -1.0, 1.0);
         float angle = acos(d);

@@ -178,7 +178,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     cache.Contexts[tex] = gpuCtx;
                 }
 
-                var pipeline = new NewPhase2Pipeline(calib, usage, alphaUsed, settings.EnableChromaDrift);
+                var pipeline = new NewPhase2Pipeline(calib, usage, alphaUsed, settings.EnableChromaDrift, tex.format);
                 NewPhase2Result result;
                 Profiler.BeginSample("JNTO.PipelineFind");
                 try
