@@ -276,8 +276,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 
                             var compGrid = RemapGrid(grid, rPerTile, cand.Width, cand.Height,
                                 settings, out var compRPerTile);
+                            float compRFloor = compGrid.TileSize * 0.5f;
                             for (int ti = 0; ti < compRPerTile.Length; ti++)
-                                if (compGrid.Tiles[ti].HasCoverage) compRPerTile[ti] = compGrid.TileSize;
+                                if (compGrid.Tiles[ti].HasCoverage)
+                                    compRPerTile[ti] = Mathf.Max(compRFloor, compRPerTile[ti]);
 
                             // Compression gate channel mappings:
                             // When needsRemap (DXT5nm→BC5), both ref and candidate are
