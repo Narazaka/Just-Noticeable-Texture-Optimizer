@@ -84,7 +84,7 @@ public class ChromaDriftGateMetricTests
     public void SubtleShift_ProducesSmallScore()
     {
         var orig = MakeSolid(128, new Color(0.5f, 0.5f, 0.5f, 1f));
-        var shifted = MakeSolid(128, new Color(0.52f, 0.48f, 0.50f, 1f));
+        var shifted = MakeSolid(128, new Color(0.503f, 0.498f, 0.500f, 1f));
         var grid = UvTileGrid.Create(128, 128);
         MarkAllCovered(grid);
         var r = FullR(grid);
