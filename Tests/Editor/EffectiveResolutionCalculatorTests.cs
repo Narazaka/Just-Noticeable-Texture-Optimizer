@@ -5,11 +5,14 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 
 public class EffectiveResolutionCalculatorTests
 {
+    const int TexW = 4096;
+    const int TexH = 4096;
+
     [Test]
     public void NoCoverage_ReturnsZero()
     {
         var tile = new TileStats { HasCoverage = false };
-        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.Medium);
+        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
         Assert.AreEqual(0f, r);
     }
 
@@ -17,34 +20,37 @@ public class EffectiveResolutionCalculatorTests
     public void ZeroDensity_ReturnsZero()
     {
         var tile = new TileStats { HasCoverage = true, Density = 0f, BoneWeight = 1f };
-        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.Medium);
+        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
         Assert.AreEqual(0f, r);
     }
 
     [Test]
-    public void HighDensity_ClampsTo_RMin()
+    public void HighDensity_ClampsTo_TileSize()
     {
+        // density = worldCm²/uvArea が大きい = UV が引き伸ばされている = テクセル密度が低い
+        // → 高解像度が必要 → r は tileSize に clamp されるべき
         var tile = new TileStats { HasCoverage = true, Density = 1e9f, BoneWeight = 1f };
-        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.Medium);
-        Assert.AreEqual(EffectiveResolutionCalculator.RMin, r, 0.001f,
-            "extreme density should clamp to rMin (visible texels far exceed available resolution)");
+        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        Assert.AreEqual(64f, r, 0.001f,
+            "high density (stretched UV) should clamp to tileSize (need full resolution)");
     }
 
     [Test]
-    public void LowDensity_ClampsTo_TileSize()
+    public void LowDensity_ClampsTo_RMin()
     {
+        // density が小さい = UV が密 = テクセル密度が高い = 大幅縮小可能
         var tile = new TileStats { HasCoverage = true, Density = 1e-6f, BoneWeight = 1f };
-        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.Medium);
-        Assert.AreEqual(64f, r, 0.001f, "very low density should clamp to tileSize (all texels visible)");
+        var r = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        Assert.AreEqual(EffectiveResolutionCalculator.RMin, r, 0.001f,
+            "very low density (tightly packed UV) should clamp to rMin (can aggressively downscale)");
     }
 
     [Test]
     public void HigherPreset_IncreasesR()
     {
-        // Density を大きめにして r が tileSize に clamp されない領域で比較する
         var tile = new TileStats { HasCoverage = true, Density = 10000f, BoneWeight = 1f };
-        var rMed = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.Medium);
-        var rHigh = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.High);
+        var rMed = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        var rHigh = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.High);
         Assert.Greater(rHigh, rMed);
     }
 
@@ -53,8 +59,8 @@ public class EffectiveResolutionCalculatorTests
     {
         var low = new TileStats { HasCoverage = true, Density = 10000f, BoneWeight = 0.3f };
         var high = new TileStats { HasCoverage = true, Density = 10000f, BoneWeight = 1.0f };
-        var rLow = EffectiveResolutionCalculator.ComputeR(low, 64, 30f, 20f, QualityPreset.Medium);
-        var rHigh = EffectiveResolutionCalculator.ComputeR(high, 64, 30f, 20f, QualityPreset.Medium);
+        var rLow = EffectiveResolutionCalculator.ComputeR(low, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        var rHigh = EffectiveResolutionCalculator.ComputeR(high, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
         Assert.Greater(rHigh, rLow);
     }
 
@@ -62,9 +68,30 @@ public class EffectiveResolutionCalculatorTests
     public void FurtherViewDistance_DecreasesR()
     {
         var tile = new TileStats { HasCoverage = true, Density = 10000f, BoneWeight = 1f };
-        var rNear = EffectiveResolutionCalculator.ComputeR(tile, 64, 30f, 20f, QualityPreset.Medium);
-        var rFar = EffectiveResolutionCalculator.ComputeR(tile, 64, 100f, 20f, QualityPreset.Medium);
+        var rNear = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        var rFar = EffectiveResolutionCalculator.ComputeR(tile, 64, TexW, TexH, 100f, 20f, QualityPreset.Medium);
         Assert.Greater(rNear, rFar);
+    }
+
+    [Test]
+    public void HigherDensity_IncreasesR()
+    {
+        // density が大きい = テクスチャが引き伸ばされている → より高い解像度が必要
+        var lowD = new TileStats { HasCoverage = true, Density = 1000f, BoneWeight = 1f };
+        var highD = new TileStats { HasCoverage = true, Density = 100000f, BoneWeight = 1f };
+        var rLow = EffectiveResolutionCalculator.ComputeR(lowD, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        var rHigh = EffectiveResolutionCalculator.ComputeR(highD, 64, TexW, TexH, 30f, 20f, QualityPreset.Medium);
+        Assert.Greater(rHigh, rLow, "higher density (stretched UV) should require higher effective resolution");
+    }
+
+    [Test]
+    public void SmallerTexture_IncreasesR()
+    {
+        // 同じ density でもテクスチャが小さいと現テクセル密度が低い → r が上がるべき
+        var tile = new TileStats { HasCoverage = true, Density = 5000f, BoneWeight = 1f };
+        var rBig = EffectiveResolutionCalculator.ComputeR(tile, 64, 4096, 4096, 30f, 20f, QualityPreset.Medium);
+        var rSmall = EffectiveResolutionCalculator.ComputeR(tile, 64, 256, 256, 30f, 20f, QualityPreset.Medium);
+        Assert.Greater(rSmall, rBig, "smaller texture has lower texel density, needs higher r");
     }
 
     [Test]

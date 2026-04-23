@@ -22,10 +22,18 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Tiling
         /// タイル内 worst-case 三角形が Nyquist を満たす実効表示解像度 r(T) を返す。
         /// 単位: タイル内ローカルのピクセル数 (0 .. tileSize)。
         /// 0 は「このタイルは見えない/coverage 無し」を表す。
+        ///
+        /// 導出:
+        ///   density = worldCm² / uvArea  (TileRasterizer が算出)
+        ///   currentTexelsPerCm² = textureW * textureH / density
+        ///   ratio = desired / current = desired * density / (W * H)
+        ///   r = tileSize * sqrt(ratio)
         /// </summary>
         public static float ComputeR(
             TileStats tile,
             int tileSize,
+            int textureWidth,
+            int textureHeight,
             float viewDistanceCm,
             float hmdPxPerDeg,
             QualityPreset preset)
@@ -36,7 +44,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Tiling
             float texelsPerCm = pxPerCm * Oversampling(preset) * tile.BoneWeight;
             float texelsPerCm2Desired = texelsPerCm * texelsPerCm;
 
-            float ratio = texelsPerCm2Desired / tile.Density;
+            float ratio = texelsPerCm2Desired * tile.Density / ((float)textureWidth * textureHeight);
             float r = tileSize * Mathf.Sqrt(ratio);
             return Mathf.Clamp(r, RMin, tileSize);
         }

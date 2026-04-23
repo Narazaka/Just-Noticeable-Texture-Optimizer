@@ -147,7 +147,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                 for (int i = 0; i < grid.Tiles.Length; i++)
                 {
                     rPerTile[i] = EffectiveResolutionCalculator.ComputeR(
-                        grid.Tiles[i], grid.TileSize, settings.ViewDistanceCm,
+                        grid.Tiles[i], grid.TileSize,
+                        grid.TextureWidth, grid.TextureHeight,
+                        settings.ViewDistanceCm,
                         settings.HMDPixelsPerDegree, settings.Preset);
                 }
 
