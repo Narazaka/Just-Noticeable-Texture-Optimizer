@@ -23,6 +23,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Resolution
                 if (c.BoneWeights.HasValue) r.BoneWeights = c.BoneWeights.Value;
                 if (c.HMDPixelsPerDegree.HasValue) r.HMDPixelsPerDegree = c.HMDPixelsPerDegree.Value;
                 if (c.EncodePolicy.HasValue) r.EncodePolicy = c.EncodePolicy.Value;
+                if (c.AllowCrunched.HasValue) r.AllowCrunched = c.AllowCrunched.Value;
+                if (c.OptimizationTarget.HasValue) r.OptimizationTarget = c.OptimizationTarget.Value;
                 if (c.Cache.HasValue) r.CacheMode = c.Cache.Value;
                 if (!string.IsNullOrEmpty(c.DebugDumpPath)) r.DebugDumpPath = c.DebugDumpPath;
                 if (c.Calibration != null) r.Calibration = c.Calibration;

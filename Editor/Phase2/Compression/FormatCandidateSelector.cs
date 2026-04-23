@@ -11,7 +11,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         /// <summary>
         /// 候補 fmt の重複なしリストを返す。常に元 fmt を含む (no-op 候補)。
         /// </summary>
-        public static List<TextureFormat> Select(TextureFormat originalFormat, ShaderUsage usage, bool alphaUsed)
+        public static List<TextureFormat> Select(TextureFormat originalFormat, ShaderUsage usage, bool alphaUsed,
+            bool allowCrunched = false)
         {
             var result = new List<TextureFormat>();
             void Add(TextureFormat f) { if (!result.Contains(f)) result.Add(f); }
@@ -33,6 +34,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 case TextureFormat.Alpha8:
                     Add(originalFormat);
                     Add(TextureFormat.BC4);
+                    if (allowCrunched) Add(TextureFormat.DXT1Crunched);
                     Add(TextureFormat.BC7);
                     return result;
 
@@ -43,9 +45,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     if (usage == ShaderUsage.Color)
                     {
                         Add(TextureFormat.DXT1);
+                        if (allowCrunched) Add(TextureFormat.DXT1Crunched);
                         Add(TextureFormat.BC7);
                     }
-                    // Normal/SingleChannel: 元 fmt 固定 (data を normal/single-ch に再エンコ不可)
                     return result;
 
                 // D: DXT1 (1bit α)
@@ -54,9 +56,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     Add(TextureFormat.DXT1);
                     if (usage == ShaderUsage.Color)
                     {
+                        if (allowCrunched) Add(TextureFormat.DXT1Crunched);
                         Add(TextureFormat.BC7);
                     }
-                    // Normal/SingleChannel: DXT1 のまま (size のみ縮小可)
                     return result;
 
                 // E: α 持つ汎用
@@ -70,26 +72,28 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     {
                         Add(originalFormat);
                         Add(TextureFormat.BC5);
+                        if (allowCrunched) Add(TextureFormat.DXT5Crunched);
                         Add(TextureFormat.BC7);
                     }
                     else if (usage == ShaderUsage.SingleChannel)
                     {
                         Add(originalFormat);
                         Add(TextureFormat.BC4);
+                        if (allowCrunched) Add(TextureFormat.DXT1Crunched);
                         Add(TextureFormat.BC7);
                     }
                     else // Color
                     {
                         if (alphaUsed)
                         {
-                            // α 使用: DXT5/BC7 (DXT1 では α 失う)
                             Add(TextureFormat.DXT5);
+                            if (allowCrunched) Add(TextureFormat.DXT5Crunched);
                             Add(TextureFormat.BC7);
                         }
                         else
                         {
-                            // α 不使用: DXT1/BC7 (DXT5 は冗長で除外)
                             Add(TextureFormat.DXT1);
+                            if (allowCrunched) Add(TextureFormat.DXT1Crunched);
                             Add(TextureFormat.BC7);
                         }
                     }

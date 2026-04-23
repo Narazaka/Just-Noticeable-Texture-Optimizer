@@ -81,14 +81,25 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         }
 
         /// <summary>
+        /// Crunched フォーマットの実効圧縮率。
+        /// Crunch はエントロピー符号化で典型的に非 Crunched の約 50% になる。
+        /// </summary>
+        static long ApplyCrunchFactor(long bytes, TextureFormat fmt)
+        {
+            if (fmt == TextureFormat.DXT1Crunched || fmt == TextureFormat.DXT5Crunched)
+                return bytes / 2;
+            return bytes;
+        }
+
+        /// <summary>
         /// mip chain 込みのバイト数 (base × 4/3 の近似)。
-        /// NewResolutionReducePass の既存 *1.33 と互換になるよう 4/3 で計算する。
+        /// Crunched フォーマットは実効圧縮率を適用する。
         /// </summary>
         public static long WithMips(int width, int height, TextureFormat fmt)
         {
             long baseBytes = BaseBytes(width, height, fmt);
-            // 1 + 1/4 + 1/16 + ... → 4/3
-            return baseBytes * 4 / 3;
+            long withMips = baseBytes * 4 / 3;
+            return ApplyCrunchFactor(withMips, fmt);
         }
     }
 }

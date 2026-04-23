@@ -13,8 +13,8 @@ namespace Narazaka.VRChat.Jnto
         [Tooltip("品質プリセット (Root必須、Override空可)")]
         public QualityPresetOverride Preset = new QualityPresetOverride { HasValue = true, Value = QualityPreset.Medium };
 
-        [Tooltip("想定最近接視距離 cm (Root必須、Override空可)")]
-        public FloatOverride ViewDistanceCm = new FloatOverride { HasValue = true, Value = 30f };
+        [Tooltip("想定最近接視距離 cm (Root必須、Override空可)。VRChat 一般的会話距離 80-120cm。")]
+        public FloatOverride ViewDistanceCm = new FloatOverride { HasValue = true, Value = 100f };
 
         [Tooltip("ボーン重み (Root必須、Override空可)")]
         public BoneWeightMapOverride BoneWeights = new BoneWeightMapOverride { HasValue = true, Value = BoneWeightMap.Default() };
@@ -24,6 +24,14 @@ namespace Narazaka.VRChat.Jnto
 
         [Tooltip("フォーマット決定時の encode 試行ポリシー。")]
         public EncodePolicyOverride EncodePolicy = new EncodePolicyOverride { HasValue = true, Value = Jnto.EncodePolicy.Safe };
+
+        [Tooltip("Crunched (DXT1Crunched/DXT5Crunched) を候補に含めるか。" +
+            "Crunched はダウンロード容量を大幅に削減するが、ランタイムで CPU 展開負荷がかかる。")]
+        public BoolOverride AllowCrunched = new BoolOverride { HasValue = true, Value = false };
+
+        [Tooltip("最適化の優先対象。VRAM: GPU メモリ最小化 (bpp 基準)。Download: アセットバンドル圧縮後のダウンロード容量最小化。")]
+        public OptimizationTargetOverride OptimizationTarget = new OptimizationTargetOverride
+            { HasValue = true, Value = Jnto.OptimizationTarget.VRAM };
 
         [Tooltip("永続キャッシュのモード。")]
         public CacheModeOverride Cache = new CacheModeOverride { HasValue = true, Value = Jnto.CacheMode.Full };
@@ -42,6 +50,8 @@ namespace Narazaka.VRChat.Jnto
     [System.Serializable] public struct QualityPresetOverride { public bool HasValue; public QualityPreset Value; }
     [System.Serializable] public struct FloatOverride { public bool HasValue; public float Value; }
     [System.Serializable] public class BoneWeightMapOverride { public bool HasValue; public BoneWeightMap Value; }
+    [System.Serializable] public struct BoolOverride { public bool HasValue; public bool Value; }
     [System.Serializable] public struct EncodePolicyOverride { public bool HasValue; public EncodePolicy Value; }
     [System.Serializable] public struct CacheModeOverride { public bool HasValue; public CacheMode Value; }
+    [System.Serializable] public struct OptimizationTargetOverride { public bool HasValue; public OptimizationTarget Value; }
 }
