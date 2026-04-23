@@ -31,12 +31,14 @@ public class AspectSizeCalculatorTests
     [Test]
     public void NonPowerOfTwo_RoundsToMultipleOf4()
     {
-        // 1500 × 1000, target=750 → (750, 500). Both multiples of 4 (750 rounds up to 752).
-        var r = AspectSizeCalculator.Compute(1500, 1000, 750);
-        Assert.AreEqual(750, r.width,   "target dimension is used as-is (caller controls POT)");
-        Assert.AreEqual(500, r.height,  "shorter dimension rounded to multiple of 4");
-        Assert.AreEqual(0, r.width  % 2, "width divisible by 2 (caller-provided)");
-        Assert.AreEqual(0, r.height % 4, "height rounded to multiple of 4");
+        // 1000 × 700, target=500 → exact min-dim = round(500 * 700 / 1000) = 350.
+        // 350 is not a multiple of 4 → rounds up to 352.
+        // Verifies RoundToMultipleOf4 actually runs (would fail if removed: exact = 350).
+        var r = AspectSizeCalculator.Compute(1000, 700, 500);
+        Assert.AreEqual(500, r.width, "target dimension is used as-is");
+        Assert.AreEqual(352, r.height,
+            "350 must round up to 352 (next multiple of 4)");
+        Assert.AreEqual(0, r.height % 4, "height is multiple of 4");
     }
 
     [Test]

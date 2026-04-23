@@ -256,7 +256,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     bool candidateRemapped = false;
                     if (fmtDiffers)
                     {
-                        var downsampled = ResolutionReducer.Resize(orig, Mathf.Max(cand.Width, cand.Height), _isLinear);
+                        var downsampled = ResolutionReducer.ResizeToSize(orig, cand.Width, cand.Height, _isLinear);
                         Texture2D candidateTex = null;
                         Texture2D compRef = null;
                         try
