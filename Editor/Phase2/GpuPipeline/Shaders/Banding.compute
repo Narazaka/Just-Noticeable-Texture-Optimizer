@@ -59,7 +59,7 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
             mx = max(mx, v);
             mn = min(mn, v);
         }
-        if (mx - mn > 0.02) continue;
+        if (mx - mn > 0.04) continue;
 
         // candidate の 2 次微分 (水平 + 垂直、大きい方を採用)
         float cc = lum(_Candidate.SampleLevel(sampler_Candidate, uv, 0).rgb);
