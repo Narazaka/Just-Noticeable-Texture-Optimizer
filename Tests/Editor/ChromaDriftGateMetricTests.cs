@@ -108,6 +108,34 @@ public class ChromaDriftGateMetricTests
         Object.DestroyImmediate(calib);
     }
 
+    [Test]
+    public void MidGray_NoDoubleLinearization_StaysBelowJnd()
+    {
+        // Bug B1: toLinear() was applied to already-linearized RT samples. For middle-gray (0.5)
+        // this inflated "delta" even for identical textures. After fix, score must stay below
+        // a tight JND bound (< 0.15).
+        var t = MakeSolid(128, new Color(0.5f, 0.5f, 0.5f, 1f));
+        var grid = UvTileGrid.Create(128, 128);
+        MarkAllCovered(grid);
+        var r = FullR(grid);
+        var calib = DegradationCalibration.Default();
+
+        using (var ctx = GpuTextureContext.FromTexture2D(t))
+        {
+            var metric = new ChromaDriftMetric();
+            var scores = new float[grid.Tiles.Length];
+            metric.Evaluate(ctx.Original, ctx.Original, grid, r, calib, scores);
+
+            float maxScore = 0f;
+            foreach (var s in scores) if (s > maxScore) maxScore = s;
+            Assert.Less(maxScore, 0.15f,
+                "identical mid-gray textures must produce near-zero ΔE (not inflated by double-linearization)");
+        }
+
+        Object.DestroyImmediate(t);
+        Object.DestroyImmediate(calib);
+    }
+
     static void MarkAllCovered(UvTileGrid g)
     {
         for (int i = 0; i < g.Tiles.Length; i++)

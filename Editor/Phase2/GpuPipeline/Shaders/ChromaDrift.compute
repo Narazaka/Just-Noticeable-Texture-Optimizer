@@ -15,15 +15,6 @@ int _TextureWidth;
 int _TextureHeight;
 float _ChromaDriftScale;
 
-// sRGB → linear (近似)
-float3 toLinear(float3 c)
-{
-    return float3(
-        c.r <= 0.04045 ? c.r / 12.92 : pow((c.r + 0.055) / 1.055, 2.4),
-        c.g <= 0.04045 ? c.g / 12.92 : pow((c.g + 0.055) / 1.055, 2.4),
-        c.b <= 0.04045 ? c.b / 12.92 : pow((c.b + 0.055) / 1.055, 2.4));
-}
-
 // linear RGB → CIE XYZ (sRGB primaries, D65)
 float3 toXYZ(float3 c)
 {
@@ -85,11 +76,13 @@ void CSEvaluate(uint3 id : SV_DispatchThreadID, uint3 gid : SV_GroupID, uint3 gt
         float2 local = (float2(sx, sy) + 0.5) / (float)N;
         float2 uv = lerp(uvMin, uvMax, local);
 
+        // RT samples return linear RGB regardless of sRGB flag (auto-decoded for sRGB, raw for linear).
+        // After Task 2 unified the sRGB flag with TextureImporter.sRGBTexture, no re-linearization is needed.
         float3 rgbO = _Orig.SampleLevel(sampler_Orig, uv, 0).rgb;
         float3 rgbC = _Candidate.SampleLevel(sampler_Candidate, uv, 0).rgb;
 
-        float3 labO = toLab(toXYZ(toLinear(rgbO)));
-        float3 labC = toLab(toXYZ(toLinear(rgbC)));
+        float3 labO = toLab(toXYZ(rgbO));
+        float3 labC = toLab(toXYZ(rgbC));
 
         // ΔE76 を JND 正規化 (ΔE=2.3 が JND 1.0 に相当)
         float de = deltaE76(labO, labC) / 2.3;
