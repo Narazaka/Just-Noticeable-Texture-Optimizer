@@ -45,12 +45,12 @@ public class LilToonTextureCatalogTests
     }
 
     [Test]
-    public void EmissionBlendMask_SingleChannelButAlphaUsed_PreservesBothLegacyBehaviors()
+    public void EmissionBlendMask_ColorWithAlpha()
     {
-        // Legacy: LilToonAlphaRules said alphaUsed=true, ShaderUsageInferrer said SingleChannel.
-        // Catalog records both bits to preserve behavior in callers.
+        // lil_common_frag.hlsl multiplies the full float4 sample into emissionColor,
+        // so RGBA are all referenced. Color, alpha-used.
         Assert.IsTrue(LilToonTextureCatalog.TryGet("_EmissionBlendMask", out var info));
-        Assert.AreEqual(ShaderUsage.SingleChannel, info.Usage);
+        Assert.AreEqual(ShaderUsage.Color, info.Usage);
         Assert.IsTrue(info.AlphaUsed);
     }
 

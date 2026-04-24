@@ -83,11 +83,11 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             { "_Main3rdDissolveNoiseMask",  new LilToonPropertyInfo(ShaderUsage.SingleChannel, false) },
             { "_AudioLinkLocalMap",    new LilToonPropertyInfo(ShaderUsage.SingleChannel, false) },
 
-            // --- 異種: SingleChannel mask だが lilToon shader 内で .a も参照される ---
-            // Phase1 旧実装は alphaUsed=true、Phase2 旧実装は usage=SingleChannel。
-            // 両方の挙動を保つため (usage, alpha) = (SingleChannel, true) として登録。
-            { "_EmissionBlendMask",    new LilToonPropertyInfo(ShaderUsage.SingleChannel, true) },
-            { "_Emission2ndBlendMask", new LilToonPropertyInfo(ShaderUsage.SingleChannel, true) },
+            // _EmissionBlendMask / _Emission2ndBlendMask:
+            // lil_common_frag.hlsl で `emissionColor *= LIL_SAMPLE_2D_ST(_EmissionBlendMask, ...)`
+            // と RGBA 全チャネルが乗算される (emissionColor は float4)。Color 扱いが正しい。
+            { "_EmissionBlendMask",    new LilToonPropertyInfo(ShaderUsage.Color, true) },
+            { "_Emission2ndBlendMask", new LilToonPropertyInfo(ShaderUsage.Color, true) },
         };
 
         public static bool TryGet(string propName, out LilToonPropertyInfo info)
