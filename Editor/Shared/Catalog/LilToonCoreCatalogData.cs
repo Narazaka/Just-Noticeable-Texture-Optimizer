@@ -103,10 +103,17 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             // _OutlineVectorTex: lilGetOutlineVector → lilUnpackNormalScale; classified as RGB per spec/contract test
             NormalRgb("_OutlineVectorTex",   "Includes/lil_common_functions.hlsl:293");
 
+            // _ShadowStrengthMask: SDF face shadow mode (_ShadowMaskType == 2) reads all RGBA
+            //   Includes/lil_common_frag.hlsl:957 → shadowStrengthMask.g / .r (LdotR sign branch)
+            //   Includes/lil_common_frag.hlsl:967 → shadowStrengthMask.b (lerp weight)
+            //   Includes/lil_common_frag.hlsl:970 → shadowStrengthMask.a (assigned to .r)
+            //   Non-SDF mode reads .r only (at line 1049+)
+            //   Runtime mode is not known at audit time → conservative union = RGBA
+            //   Seed was SingleChannel+R but BC4 would destroy G/B/A needed for SDF → corrected to Color+RGBA
+            Table.Add((null, "_ShadowStrengthMask"), new LilToonPropertyInfo(ShaderUsage.Color, RGBA, "Includes/lil_common_frag.hlsl:938 (SDF face shadow reads .rgba at 957/967/970)"));
+
             // --- SingleChannel (R のみ) ----
             void SingleR(string prop, string evidence) => Table.Add((null, prop), new LilToonPropertyInfo(ShaderUsage.SingleChannel, R, evidence));
-            // _ShadowStrengthMask: LIL_SAMPLE_2D → .r used as primary strength (contract: SingleChannel per seed test)
-            SingleR("_ShadowStrengthMask",        "Includes/lil_common_frag.hlsl:938");
             // _ShadowBorderMask: moved to ColorRgb above (hlsl reads .r/.g/.b)
             // _ShadowBlurMask: moved to ColorRgb above (hlsl reads .r/.g/.b)
             // _OutlineWidthMask: LIL_SAMPLE_2D_LOD → .r only

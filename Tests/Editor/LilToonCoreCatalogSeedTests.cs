@@ -40,13 +40,16 @@ public class LilToonCoreCatalogSeedTests
         Assert.IsFalse(i.AlphaUsed);
     }
 
-    [Test] public void ShadowStrengthMask_SingleChannel()
+    // _ShadowStrengthMask: SDF face shadow mode (_ShadowMaskType==2) reads .rgba all.
+    // Runtime mode unknown at compression time → conservative union = Color+RGBA.
+    // Seed was SingleChannel but hlsl audit corrected to Color+RGBA to prevent BC4 destroying G/B/A.
+    [Test] public void ShadowStrengthMask_ColorAlpha_SDFShadowRegressionGuard()
     {
         var s = GetLilToonShader();
         if (s == null) Assert.Ignore();
         Assert.IsTrue(LilToonPropertyCatalog.TryGet(s, "_ShadowStrengthMask", out var i));
-        Assert.AreEqual(ShaderUsage.SingleChannel, i.Usage);
-        Assert.IsFalse(i.AlphaUsed);
+        Assert.AreEqual(ShaderUsage.Color, i.Usage);
+        Assert.IsTrue(i.AlphaUsed);
     }
 
     [Test] public void OutlineTex_ColorNoAlpha()

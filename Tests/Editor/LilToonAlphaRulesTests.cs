@@ -20,7 +20,8 @@ public class LilToonAlphaRulesTests
     [Test] public void MainTex_AlwaysUsesAlpha() => Assert.IsTrue(IsAlpha("_MainTex"));
 
     [Test] public void AlphaMask_RChannelOnly_NoAlpha() => Assert.IsFalse(IsAlpha("_AlphaMask"));
-    [Test] public void ShadowStrengthMask_NoAlpha() => Assert.IsFalse(IsAlpha("_ShadowStrengthMask"));
+    // _ShadowStrengthMask: SDF face shadow mode reads .rgba → alpha used (hlsl audit correction)
+    [Test] public void ShadowStrengthMask_UsesAlpha() => Assert.IsTrue(IsAlpha("_ShadowStrengthMask"));
     [Test] public void SmoothnessTex_NoAlpha() => Assert.IsFalse(IsAlpha("_SmoothnessTex"));
     [Test] public void OutlineWidthMask_NoAlpha() => Assert.IsFalse(IsAlpha("_OutlineWidthMask"));
     [Test] public void MainColorAdjustMask_NoAlpha() => Assert.IsFalse(IsAlpha("_MainColorAdjustMask"));
