@@ -356,6 +356,18 @@ stub `ICustomPropertyCatalogExtension` と fake shader（path 差し替え手段
 5. **未分類 pattern の検出**: 既存 `ShaderUsage` 3 値に当てはまらないものが見つかったら本 spec を更新し `FormatCandidateSelector` に case を追加してから作業継続
 6. **Uzumore 分も同じ手順で audit**: `custom.hlsl` とそこから macro 経由で参照される箇所を全て辿る
 
+## 未分類 pattern 検出時プロシージャ (Phase 3 audit 作業用)
+
+audit 中に既存 3 値 (Color / Normal / SingleChannel) のいずれにも当てはまらない sampling pattern が見つかった場合、作業を中断して以下を実行する:
+
+1. 該当 hlsl の path:line と sampling pattern の簡易記述をこの spec の「未解決事項」欄に追記 (一時)
+2. `ShaderUsage` 新値を追加: 意味論と representative な channel mask を決める
+3. `FormatCandidateSelector` に新 case を追加 (どの TextureFormat 候補を出すか)
+4. `FormatCandidateSelector` のテスト (`FormatCandidateSelectorTests`) を追加
+5. この spec の「データモデル - ShaderUsage 拡張ポリシー」欄を更新し、新値の意味論を正式記述
+6. audit 作業を再開し、当該 hlsl 由来のプロパティに新値を使用
+7. 全 audit 完了後に「未解決事項」欄の一時メモを削除
+
 ## 未解決事項
 
 なし。
