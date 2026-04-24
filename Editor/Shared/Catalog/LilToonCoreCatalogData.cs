@@ -150,6 +150,55 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             SingleR("_AudioLinkLocalMap",         "Includes/lil_common_frag.hlsl:683");
             // _RimShadeMask: LIL_SAMPLE_2D → .r only (rim *=)
             SingleR("_RimShadeMask",              "Includes/lil_common_frag.hlsl:1213");
+
+            // -----------------------------------------------------------------------
+            // Fur / FurOnly variant-specific props
+            // These textures are only declared and sampled in fur/furonly shader variants.
+            // All fur variants (lts_fur, lts_fur_cutout, lts_fur_two,
+            //   lts_furonly, lts_furonly_cutout, lts_furonly_two, ltsmulti_fur)
+            // share the same HLSL paths (lil_common_vert_fur.hlsl + lil_common_frag.hlsl).
+            // -----------------------------------------------------------------------
+            string[] furVariants = {
+                "lts_fur", "lts_fur_cutout", "lts_fur_two",
+                "lts_furonly", "lts_furonly_cutout", "lts_furonly_two",
+                "ltsmulti_fur"
+            };
+
+            void FurEntry(string prop, LilToonPropertyInfo info)
+            {
+                foreach (var v in furVariants)
+                    Table.Add((v, prop), info);
+            }
+
+            // _FurNoiseMask: LIL_SAMPLE_2D_ST(_FurNoiseMask, sampler_MainTex, fd.uv0).r
+            //   → furNoiseMask (float scalar). Only .r channel consumed.
+            //   (lil_common_frag.hlsl:432)
+            FurEntry("_FurNoiseMask",
+                new LilToonPropertyInfo(ShaderUsage.SingleChannel, R,
+                    "Includes/lil_common_frag.hlsl:432 (_FurNoiseMask sampled .r → furNoiseMask)"));
+
+            // _FurMask: LIL_SAMPLE_2D(_FurMask, sampler_MainTex, fd.uvMain).r
+            //   → furAlpha *= tex.r. Only .r channel consumed.
+            //   (lil_common_frag.hlsl:438)
+            FurEntry("_FurMask",
+                new LilToonPropertyInfo(ShaderUsage.SingleChannel, R,
+                    "Includes/lil_common_frag.hlsl:438 (_FurMask sampled .r → furAlpha *= ...)"));
+
+            // _FurLengthMask: LIL_SAMPLE_2D_LOD(_FurLengthMask, lil_sampler_linear_repeat, uv, 0).r
+            //   → furVectors[i] *= tex.r (geometry shader). Only .r channel consumed.
+            //   (lil_common_vert_fur.hlsl:472-474)
+            FurEntry("_FurLengthMask",
+                new LilToonPropertyInfo(ShaderUsage.SingleChannel, R,
+                    "Includes/lil_common_vert_fur.hlsl:472 (_FurLengthMask sampled .r → furVectors[i] *=)"));
+
+            // _FurVectorTex: LIL_SAMPLE_2D_LOD(_FurVectorTex, ...) → lilUnpackNormalScale(tex, _FurVectorScale)
+            //   lilUnpackNormalScale: DXT5nm path → .ag used (normalTex.a *= normalTex.r → .a and .r involved;
+            //     normalTex.ag * 2 - 1). Non-DXT5nm path → .rgb used.
+            //   Union across both paths: A|G (same treatment as _BumpMap → NormalAG).
+            //   (lil_common_vert_fur.hlsl:172 + lil_common_functions.hlsl:166-181)
+            FurEntry("_FurVectorTex",
+                new LilToonPropertyInfo(ShaderUsage.Normal, A | G,
+                    "Includes/lil_common_vert_fur.hlsl:172 → lilUnpackNormalScale .ag (DXT5nm, same as _BumpMap); lil_common_functions.hlsl:176"));
         }
 
         internal static bool TryGet(string variantId, string propName, out LilToonPropertyInfo info)
