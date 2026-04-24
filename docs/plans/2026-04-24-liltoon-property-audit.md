@@ -14,12 +14,23 @@
 
 ## Phase 1: インフラ構築
 
-### Task 1: データモデル新設
+### Task 1: データモデル新設 + 旧 catalog の constructor 移行
 
 **Files:**
 - Create: `Packages/net.narazaka.vrchat.jnto/Editor/Shared/LilToonPropertyInfo.cs`
+- Modify: `Packages/net.narazaka.vrchat.jnto/Editor/Shared/LilToonTextureCatalog.cs` (既存 inline `LilToonPropertyInfo` 定義を削除し、entry を新 3-arg constructor へ seed 移行)
 
-ShaderUsage / ChannelMask / LilToonPropertyInfo の 3 つを同ファイルに同居。既存 `LilToonTextureCatalog.cs` と並存させる段階。
+ChannelMask / LilToonPropertyInfo struct を新ファイルに定義。`ShaderUsage` は既存 `Phase2.Compression.ShaderUsage` を using で再利用する (重複定義回避)。
+
+**重要**: 旧 `LilToonTextureCatalog.cs` 内部に `LilToonPropertyInfo` struct が inline 定義されている (`{ Usage, bool AlphaUsed }`, 2-arg constructor) ため、新ファイルを同じ名前空間に追加すると compile error になる。そのため Task 1 内で旧 inline 定義を削除し、Dictionary entry を新 3-arg constructor に移行する必要がある。移行は振る舞い保全ルール:
+
+- `(Color, true)`          → `(Color, RGBA, SEED)`
+- `(Color, false)`         → `(Color, RGB, SEED)`
+- `(Normal, true, DXT5nm)` → `(Normal, A | G, SEED)`
+- `(Normal, false)`        → `(Normal, RGB, SEED)`
+- `(SingleChannel, false)` → `(SingleChannel, R, SEED)`
+
+`SEED = "(seed from prev catalog)"`。Phase 3 audit で各 EvidenceRef を正式 `.hlsl path:line` に置き換える。
 
 - [ ] **Step 1: 新ファイル作成**
 
