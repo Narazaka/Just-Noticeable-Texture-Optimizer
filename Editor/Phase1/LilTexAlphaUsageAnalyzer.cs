@@ -7,7 +7,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
     {
         public static bool IsAlphaUsed(Material mat, string propertyName)
         {
-            if (IsLilToon(mat)) return LilToonAlphaRules.IsAlphaUsed(propertyName);
+            if (IsLilToon(mat)) return LilToonAlphaRules.IsAlphaUsed(mat.shader, propertyName);
             return ConservativeNonLilFallback(mat, propertyName);
         }
 

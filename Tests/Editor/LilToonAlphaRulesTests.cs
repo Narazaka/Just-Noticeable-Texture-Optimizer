@@ -4,33 +4,37 @@ using Narazaka.VRChat.Jnto.Editor.Phase1;
 
 public class LilToonAlphaRulesTests
 {
-    // ノーマルマップ: DXT5nm でアルファに法線X成分 → alpha使用 (strip禁止)
-    [Test] public void BumpMap_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_BumpMap"));
-    [Test] public void Bump2ndMap_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_Bump2ndMap"));
+    static Shader L => Shader.Find("lilToon");
 
-    // MainTex: 常にアルファ使用
-    [Test] public void MainTex_AlwaysUsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_MainTex"));
+    static bool IsAlpha(string prop)
+    {
+        var s = L;
+        if (s == null) Assert.Ignore("lilToon shader not available");
+        return LilToonAlphaRules.IsAlphaUsed(s, prop);
+    }
 
-    // Rチャネルのみマスク: alpha不使用
-    [Test] public void AlphaMask_RChannelOnly_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_AlphaMask"));
-    [Test] public void ShadowStrengthMask_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_ShadowStrengthMask"));
-    [Test] public void SmoothnessTex_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_SmoothnessTex"));
-    [Test] public void OutlineWidthMask_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_OutlineWidthMask"));
-    [Test] public void MainColorAdjustMask_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_MainColorAdjustMask"));
+    // ノーマルマップ: DXT5nm (.ag) → alpha 使用 (strip禁止)
+    [Test] public void BumpMap_UsesAlpha() => Assert.IsTrue(IsAlpha("_BumpMap"));
+    [Test] public void Bump2ndMap_UsesAlpha() => Assert.IsTrue(IsAlpha("_Bump2ndMap"));
 
-    // RGBのみ使用 (alpha無関係)
-    [Test] public void OutlineTex_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_OutlineTex"));
-    [Test] public void MatCapBlendMask_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_MatCapBlendMask"));
-    [Test] public void GlitterShapeTex_NoAlpha() => Assert.IsFalse(LilToonAlphaRules.IsAlphaUsed("_GlitterShapeTex"));
+    [Test] public void MainTex_AlwaysUsesAlpha() => Assert.IsTrue(IsAlpha("_MainTex"));
 
-    // RGBA全体使用 (alpha = ブレンド係数等)
-    [Test] public void MatCapTex_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_MatCapTex"));
-    [Test] public void ShadowColorTex_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_ShadowColorTex"));
-    [Test] public void EmissionMap_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_EmissionMap"));
-    [Test] public void RimColorTex_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_RimColorTex"));
-    [Test] public void BacklightColorTex_UsesAlpha() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_BacklightColorTex"));
+    [Test] public void AlphaMask_RChannelOnly_NoAlpha() => Assert.IsFalse(IsAlpha("_AlphaMask"));
+    [Test] public void ShadowStrengthMask_NoAlpha() => Assert.IsFalse(IsAlpha("_ShadowStrengthMask"));
+    [Test] public void SmoothnessTex_NoAlpha() => Assert.IsFalse(IsAlpha("_SmoothnessTex"));
+    [Test] public void OutlineWidthMask_NoAlpha() => Assert.IsFalse(IsAlpha("_OutlineWidthMask"));
+    [Test] public void MainColorAdjustMask_NoAlpha() => Assert.IsFalse(IsAlpha("_MainColorAdjustMask"));
 
-    // 未知プロパティ: 安全側で alpha使用
-    [Test] public void UnknownProperty_ConservativeTrue() => Assert.IsTrue(LilToonAlphaRules.IsAlphaUsed("_MadeUpTex"));
+    [Test] public void OutlineTex_NoAlpha() => Assert.IsFalse(IsAlpha("_OutlineTex"));
+    [Test] public void MatCapBlendMask_NoAlpha() => Assert.IsFalse(IsAlpha("_MatCapBlendMask"));
+    [Test] public void GlitterShapeTex_NoAlpha() => Assert.IsFalse(IsAlpha("_GlitterShapeTex"));
 
+    [Test] public void MatCapTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_MatCapTex"));
+    [Test] public void ShadowColorTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_ShadowColorTex"));
+    [Test] public void EmissionMap_UsesAlpha() => Assert.IsTrue(IsAlpha("_EmissionMap"));
+    [Test] public void RimColorTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_RimColorTex"));
+    [Test] public void BacklightColorTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_BacklightColorTex"));
+
+    // 未知プロパティ: 安全側 true
+    [Test] public void UnknownProperty_ConservativeTrue() => Assert.IsTrue(IsAlpha("_MadeUpTex"));
 }
