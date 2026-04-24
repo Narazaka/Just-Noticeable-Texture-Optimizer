@@ -1,7 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace Narazaka.VRChat.Jnto.Editor.Phase1
+namespace Narazaka.VRChat.Jnto.Editor.Shared
 {
     public static class TextureReferenceCollector
     {

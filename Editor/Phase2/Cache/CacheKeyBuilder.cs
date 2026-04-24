@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using Narazaka.VRChat.Jnto.Editor.Phase1;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Resolution;
 

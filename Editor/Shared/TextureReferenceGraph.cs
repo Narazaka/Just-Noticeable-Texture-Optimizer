@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Narazaka.VRChat.Jnto.Editor.Phase1
+namespace Narazaka.VRChat.Jnto.Editor.Shared
 {
     public class TextureReference
     {

@@ -11,6 +11,7 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 using Narazaka.VRChat.Jnto.Editor.Resolution;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2
 {

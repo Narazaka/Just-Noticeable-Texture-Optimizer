@@ -2,7 +2,7 @@ using NUnit.Framework;
 using System.Collections.Generic;
 using UnityEngine;
 using Narazaka.VRChat.Jnto;
-using Narazaka.VRChat.Jnto.Editor.Phase1;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Cache;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
 using Narazaka.VRChat.Jnto.Editor.Resolution;

@@ -1,6 +1,6 @@
 using NUnit.Framework;
 using UnityEngine;
-using Narazaka.VRChat.Jnto.Editor.Phase1;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 
 public class TextureReferenceCollectorTests
 {
