@@ -24,7 +24,7 @@ public class NoCoverageKeepsOriginalTests
         {
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
                 var result = pipeline.Find(t, ctx, grid, r, new ResolvedSettings { Preset = QualityPreset.Medium });
 
                 Assert.IsTrue(result.FinalVerdict.Pass,

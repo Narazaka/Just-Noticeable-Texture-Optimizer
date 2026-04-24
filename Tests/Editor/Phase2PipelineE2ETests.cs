@@ -12,10 +12,10 @@ using Narazaka.VRChat.Jnto.Editor.Resolution;
 using Narazaka.VRChat.Jnto.Editor.Tests.Fixtures;
 
 /// <summary>
-/// R-D4-2 Step 6: NewPhase2Pipeline の E2E 不変条件テスト。
+/// R-D4-2 Step 6: Phase2Pipeline の E2E 不変条件テスト。
 /// フォーマット選択/縮小/no-op fallback の責務を統合的に検証する。
 /// </summary>
-public class NewPhase2PipelineE2ETests
+public class Phase2PipelineE2ETests
 {
     // ---------- Helpers ----------
 
@@ -68,7 +68,7 @@ public class NewPhase2PipelineE2ETests
         {
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
                 var result = pipeline.Find(t, ctx, grid, r, DefaultSettings());
                 Assert.IsNotNull(result);
                 Assert.AreNotEqual(TextureFormat.DXT5, result.Format,
@@ -98,7 +98,7 @@ public class NewPhase2PipelineE2ETests
         {
             using (var ctx = GpuTextureContext.FromTexture2D(t, isLinear: true))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false);
                 var result = pipeline.Find(t, ctx, grid, r, DefaultSettings());
                 Assert.IsNotNull(result);
                 Assert.AreNotEqual(TextureFormat.DXT5, result.Format,
@@ -141,7 +141,7 @@ public class NewPhase2PipelineE2ETests
         {
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
                 var result = pipeline.Find(t, ctx, grid, r, DefaultSettings());
                 Assert.IsNotNull(result);
                 Assert.IsNotNull(result.Final);

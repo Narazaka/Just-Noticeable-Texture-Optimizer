@@ -14,11 +14,11 @@ using Narazaka.VRChat.Jnto.Editor.Resolution;
 namespace Narazaka.VRChat.Jnto.Editor.Phase2
 {
     /// <summary>
-    /// M7 新パイプライン (PerceptualGate + TileGrid + FormatCandidateSelector +
-    /// CompressionCandidateEnumerator + Persistent/InMemory cache) を束ねる NDMF Pass。
-    /// R-D4-2 で (size × fmt) 容量最小化探索に書き換わった。
+    /// PerceptualGate + TileGrid + FormatCandidateSelector +
+    /// CompressionCandidateEnumerator + Persistent/InMemory cache を束ねる NDMF Pass。
+    /// (size × fmt) 容量最小化探索を行う。
     /// </summary>
-    public class NewResolutionReducePass : Pass<NewResolutionReducePass>
+    public class ResolutionReducePass : Pass<ResolutionReducePass>
     {
         protected override void Execute(BuildContext ctx)
         {
@@ -183,8 +183,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
                     cache.Contexts[tex] = gpuCtx;
                 }
 
-                var pipeline = new NewPhase2Pipeline(calib, usage, alphaUsed, settings.EnableChromaDrift, tex.format, isLinear);
-                NewPhase2Result result;
+                var pipeline = new Phase2Pipeline(calib, usage, alphaUsed, settings.EnableChromaDrift, tex.format, isLinear);
+                Phase2Result result;
                 Profiler.BeginSample("JNTO.PipelineFind");
                 try
                 {
@@ -302,7 +302,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2
             Phase1.AlphaStripPass.SafeSetTextures(root, cloneMap, replaced);
         }
 
-        static long EstimateSavedBytes(Texture2D orig, NewPhase2Result r)
+        static long EstimateSavedBytes(Texture2D orig, Phase2Result r)
         {
             long origBytes = BytesEstimator.WithMips(orig.width, orig.height, orig.format);
             long newBytes = BytesEstimator.WithMips(r.Width, r.Height, r.Format);

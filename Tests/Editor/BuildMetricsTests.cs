@@ -17,7 +17,7 @@ public class BuildMetricsTests
         var calib = DegradationCalibration.Default();
         try
         {
-            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
+            var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
                 enableChromaDrift: true);
             var t = TestTextureFactory.MakeSolid(64, 64, Color.gray);
             var grid = TestGridFactory.AllCovered(64, 64);
@@ -41,7 +41,7 @@ public class BuildMetricsTests
         var calib = DegradationCalibration.Default();
         try
         {
-            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
+            var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
                 enableChromaDrift: false);
             var t = TestTextureFactory.MakeSolid(64, 64, Color.gray);
             var grid = TestGridFactory.AllCovered(64, 64);
@@ -65,7 +65,7 @@ public class BuildMetricsTests
         var calib = DegradationCalibration.Default();
         try
         {
-            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false,
+            var pipeline = new Phase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false,
                 enableChromaDrift: true);
             var t = TestTextureFactory.MakeFlatNormal(64, 64);
             var grid = TestGridFactory.AllCovered(64, 64);
@@ -91,9 +91,9 @@ public class BuildMetricsTests
         var calib = DegradationCalibration.Default();
         try
         {
-            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
+            var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false,
                 enableChromaDrift: true, origFormat: TextureFormat.RGBA32, isLinear: true);
-            var f = typeof(NewPhase2Pipeline).GetField("_isLinear",
+            var f = typeof(Phase2Pipeline).GetField("_isLinear",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.IsNotNull(f, "_isLinear field must exist");
             Assert.IsTrue((bool)f.GetValue(pipeline),
@@ -108,9 +108,9 @@ public class BuildMetricsTests
         var calib = DegradationCalibration.Default();
         try
         {
-            var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false,
+            var pipeline = new Phase2Pipeline(calib, ShaderUsage.Normal, alphaUsed: false,
                 enableChromaDrift: false, origFormat: TextureFormat.DXT5);
-            var f = typeof(NewPhase2Pipeline).GetField("_isLinear",
+            var f = typeof(Phase2Pipeline).GetField("_isLinear",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.IsTrue((bool)f.GetValue(pipeline),
                 "Normal usage without explicit isLinear must derive true (linear)");

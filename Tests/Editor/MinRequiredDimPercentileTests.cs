@@ -39,7 +39,7 @@ public class MinRequiredDimPercentileTests
         {
             using (var ctx = GpuTextureContext.FromTexture2D(tex))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
                 var result = pipeline.Find(tex, ctx, grid, r, new ResolvedSettings { Preset = QualityPreset.Medium });
 
                 // If r98 is used and the high-density tile (1/4 = 2.5% of 16 tiles) slips

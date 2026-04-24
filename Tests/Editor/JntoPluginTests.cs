@@ -5,7 +5,7 @@ using Narazaka.VRChat.Jnto.Editor.Phase2;
 
 /// <summary>
 /// バグ#4 回帰防止: JntoPlugin.Configure が AlphaStripPass を
-/// NewResolutionReducePass の前に登録すること。
+/// ResolutionReducePass の前に登録すること。
 /// </summary>
 public class JntoPluginTests
 {
@@ -15,10 +15,10 @@ public class JntoPluginTests
         // NDMF Plugin.Configure() は protected。reflection で呼ぶ必要あり。
         // または: NDMF の AvatarProcessor 経由で実行され、Pass が登録される副作用を assert する。
         // 簡易対応: Configure 自体ではなく、AlphaStripPass.Instance と
-        // NewResolutionReducePass.Instance が両方とも non-null であることを確認 (Pass<T> の Singleton 検証)。
+        // ResolutionReducePass.Instance が両方とも non-null であることを確認 (Pass<T> の Singleton 検証)。
 
         Assert.IsNotNull(AlphaStripPass.Instance, "AlphaStripPass.Instance must exist");
-        Assert.IsNotNull(NewResolutionReducePass.Instance, "NewResolutionReducePass.Instance must exist");
+        Assert.IsNotNull(ResolutionReducePass.Instance, "ResolutionReducePass.Instance must exist");
     }
 
     [Test]
@@ -62,8 +62,8 @@ public class JntoPluginTests
         var path = "Packages/net.narazaka.vrchat.jnto/Editor/NDMF/JntoPlugin.cs";
         var src = System.IO.File.ReadAllText(path);
         StringAssert.Contains("AlphaStripPass.Instance", src,
-            "JntoPlugin.Configure() must wire AlphaStripPass before NewResolutionReducePass");
-        StringAssert.Contains("NewResolutionReducePass.Instance", src,
-            "JntoPlugin.Configure() must wire NewResolutionReducePass");
+            "JntoPlugin.Configure() must wire AlphaStripPass before ResolutionReducePass");
+        StringAssert.Contains("ResolutionReducePass.Instance", src,
+            "JntoPlugin.Configure() must wire ResolutionReducePass");
     }
 }

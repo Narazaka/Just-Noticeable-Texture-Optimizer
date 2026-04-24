@@ -9,7 +9,7 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 using Narazaka.VRChat.Jnto.Editor.Resolution;
 using Narazaka.VRChat.Jnto.Editor.Tests.Fixtures;
 
-public class NewPhase2PipelineTests
+public class Phase2PipelineTests
 {
     [Test]
     public void Find_WithCheckerboard_ReturnsValidResult()
@@ -33,7 +33,7 @@ public class NewPhase2PipelineTests
 
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
                 var result = pipeline.Find(t, ctx, grid, r, settings);
 
                 Assert.IsNotNull(result);
@@ -72,7 +72,7 @@ public class NewPhase2PipelineTests
 
             using (var ctx = GpuTextureContext.FromTexture2D(t))
             {
-                var pipeline = new NewPhase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
+                var pipeline = new Phase2Pipeline(calib, ShaderUsage.Color, alphaUsed: false);
                 var result = pipeline.Find(t, ctx, grid, r, settings);
 
                 Assert.IsNotNull(result);

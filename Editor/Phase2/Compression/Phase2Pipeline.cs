@@ -10,7 +10,7 @@ using Narazaka.VRChat.Jnto.Editor.Resolution;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 {
-    public class NewPhase2Result
+    public class Phase2Result
     {
         public Texture2D Final;
         public int Size;    // = max(Width, Height)
@@ -24,7 +24,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
     }
 
     /// <summary>
-    /// R-D4-2 容量最小化探索パイプライン。
+    /// 容量最小化探索パイプライン。
     ///
     /// アルゴリズム:
     ///   1. FormatCandidateSelector.Select で候補 fmt 集合を得る
@@ -36,11 +36,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
     ///      - fmt 変更必要 → compression gate
     ///      - 両方必要なら両方通す
     ///   4. 全 fail でも no-op が必ずあるので orig を返す
-    ///
-    /// 旧: BinarySearchStrategy + FormatPredictor + EnforceRoleConstraint + BC7Fallback は
-    /// FormatCandidateSelector + 容量最小化探索に統合された。
     /// </summary>
-    public class NewPhase2Pipeline
+    public class Phase2Pipeline
     {
         readonly DegradationCalibration _calib;
         readonly PerceptualGate _gate;
@@ -52,7 +49,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
         readonly bool _isLinear;
         readonly TextureFormat _origFormat;
 
-        public NewPhase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed,
+        public Phase2Pipeline(DegradationCalibration calib, ShaderUsage usage, bool alphaUsed,
             bool enableChromaDrift = true, TextureFormat origFormat = TextureFormat.RGBA32,
             bool? isLinear = null)
         {
@@ -105,7 +102,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             return list.ToArray();
         }
 
-        public NewPhase2Result Find(
+        public Phase2Result Find(
             Texture2D orig, GpuTextureContext origCtx,
             UvTileGrid grid, float[] rPerTile,
             ResolvedSettings settings)
@@ -121,7 +118,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             {
                 sw.Stop();
                 UnityEngine.Debug.Log($"[JNTO/pipeline] {orig.name}: no tile coverage, keeping original");
-                return new NewPhase2Result
+                return new Phase2Result
                 {
                     Final = orig,
                     Size = origSize,
@@ -144,7 +141,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                 orig.width, orig.height, orig.format, fmts, DensityCalculator.MinSize,
                 settings.OptimizationTarget);
 
-            NewPhase2Result result = null;
+            Phase2Result result = null;
             var failLog = new StringBuilder();
             int tried = 0;
 
@@ -179,7 +176,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     if (cand.IsNoOp)
                     {
                         sw.Stop();
-                        result = new NewPhase2Result
+                        result = new Phase2Result
                         {
                             Final = orig,
                             Size = Mathf.Max(orig.width, orig.height),
@@ -389,7 +386,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
                     if (fmtDiffers) reason.Append($" compression score={compVerdict.TextureScore:F3}.");
                     if (jointVerdict.TextureScore > 0f) reason.Append($" joint score={jointVerdict.TextureScore:F3}.");
                     if (failLog.Length > 0) reason.Append(" Fails: [").Append(failLog).Append(']');
-                    result = new NewPhase2Result
+                    result = new Phase2Result
                     {
                         Final = final,
                         Size = Mathf.Max(final.width, final.height),
@@ -407,7 +404,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 
             // 通常ここに到達しない (no-op が必ずある)。フェイルセーフ: orig を返す。
             sw.Stop();
-            return new NewPhase2Result
+            return new Phase2Result
             {
                 Final = orig,
                 Size = origSize,

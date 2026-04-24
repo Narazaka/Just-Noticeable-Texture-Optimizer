@@ -6,8 +6,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
     /// TextureFormat ごとの bpp (bits per pixel) と、width×height×(mip chain) での
     /// バイト数推定を提供する共通ユーティリティ。
     ///
-    /// R-D4-2 で NewResolutionReducePass.BytesFor / NewPhase2Pipeline の容量比較
-    /// で使われる計算を一元化するために新設。
+    /// ResolutionReducePass / Phase2Pipeline の容量比較で使われる計算を一元化する。
     /// </summary>
     public static class BytesEstimator
     {
