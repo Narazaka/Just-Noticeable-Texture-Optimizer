@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase1
 {
@@ -7,19 +8,21 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase1
     {
         public static bool IsAlphaUsed(Material mat, string propertyName)
         {
-            if (IsLilToon(mat)) return LilToonAlphaRules.IsAlphaUsed(mat.shader, propertyName);
+            if (mat == null) return ConservativeNonLilFallback(mat, propertyName);
+            var variantId = LilToonShaderIdentifier.TryGetVariantId(mat.shader);
+            if (variantId != null) return LilToonAlphaRules.IsAlphaUsed(mat.shader, propertyName);
             return ConservativeNonLilFallback(mat, propertyName);
         }
 
+        /// <summary>
+        /// 旧 API 互換: 既存の lilToon 判定呼び出し向け。<see cref="LilToonShaderIdentifier.TryGetVariantId"/> に置換された。
+        /// </summary>
         public static bool IsLilToon(Material mat)
-        {
-            if (mat == null || mat.shader == null) return false;
-            var n = mat.shader.name ?? "";
-            return n.Contains("lilToon") || n.Contains("_lil/");
-        }
+            => mat != null && LilToonShaderIdentifier.TryGetVariantId(mat.shader) != null;
 
         static bool ConservativeNonLilFallback(Material mat, string propertyName)
         {
+            if (mat == null) return true;   // null material は安全側
             var tex = mat.GetTexture(propertyName);
             if (tex == null) return false;
             var path = AssetDatabase.GetAssetPath(tex);
