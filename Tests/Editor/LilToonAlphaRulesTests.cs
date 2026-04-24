@@ -27,7 +27,8 @@ public class LilToonAlphaRulesTests
 
     [Test] public void OutlineTex_NoAlpha() => Assert.IsFalse(IsAlpha("_OutlineTex"));
     [Test] public void MatCapBlendMask_NoAlpha() => Assert.IsFalse(IsAlpha("_MatCapBlendMask"));
-    [Test] public void GlitterShapeTex_NoAlpha() => Assert.IsFalse(IsAlpha("_GlitterShapeTex"));
+    // _GlitterShapeTex: shapeTex.rgb * shapeTex.a → alpha IS used as shape mask (hlsl audit correction)
+    [Test] public void GlitterShapeTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_GlitterShapeTex"));
 
     [Test] public void MatCapTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_MatCapTex"));
     [Test] public void ShadowColorTex_UsesAlpha() => Assert.IsTrue(IsAlpha("_ShadowColorTex"));
