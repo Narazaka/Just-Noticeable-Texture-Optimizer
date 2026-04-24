@@ -1,10 +1,12 @@
 using UnityEditor;
 using UnityEngine;
+using Narazaka.VRChat.Jnto.Editor.Shared;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 {
     /// <summary>
     /// material/shader prop name または TextureImporter から ShaderUsage を推定する。
+    /// lilToon プロパティの分類は <see cref="LilToonTextureCatalog"/> を参照。
     /// </summary>
     public static class ShaderUsageInferrer
     {
@@ -13,36 +15,7 @@ namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
             // 1. lilToon prop semantics
             if (material != null && Phase1.LilTexAlphaUsageAnalyzer.IsLilToon(material))
             {
-                switch (propName)
-                {
-                    case "_BumpMap":
-                    case "_Bump2ndMap":
-                    case "_OutlineBumpMap":
-                    case "_MatCapBumpMap":
-                    case "_MatCap2ndBumpMap":
-                    case "_OutlineVectorTex":
-                        return ShaderUsage.Normal;
-                    case "_AlphaMask":
-                    case "_EmissionBlendMask":
-                    case "_Emission2ndBlendMask":
-                    case "_ShadowStrengthMask":
-                    case "_ShadowBorderMask":
-                    case "_ShadowBlurMask":
-                    case "_OutlineWidthMask":
-                    case "_MainColorAdjustMask":
-                    case "_SmoothnessTex":
-                    case "_MetallicGlossMap":
-                    case "_Bump2ndScaleMask":
-                    case "_ParallaxMap":
-                    case "_DissolveMask":
-                    case "_DissolveNoiseMask":
-                    case "_Main2ndDissolveMask":
-                    case "_Main2ndDissolveNoiseMask":
-                    case "_Main3rdDissolveMask":
-                    case "_Main3rdDissolveNoiseMask":
-                    case "_AudioLinkLocalMap":
-                        return ShaderUsage.SingleChannel;
-                }
+                if (LilToonTextureCatalog.TryGet(propName, out var info)) return info.Usage;
             }
 
             // 2. TextureImporter.textureType
