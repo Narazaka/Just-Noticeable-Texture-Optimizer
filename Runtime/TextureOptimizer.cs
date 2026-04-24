@@ -45,8 +45,6 @@ namespace Narazaka.VRChat.Jnto
         [Tooltip("JND キャリブレーション (DegradationCalibration asset)。空で既定値。")]
         public UnityEngine.Object Calibration;
 
-        public Complexity.ComplexityStrategyAsset ComplexityStrategy;
-
         public List<Object> ExcludeList = new List<Object>();
     }
 

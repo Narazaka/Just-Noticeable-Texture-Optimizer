@@ -25,8 +25,7 @@ namespace Narazaka.VRChat.Jnto.Editor
             bool isRoot = modeProp.enumValueIndex == (int)TextureOptimizerMode.Root;
             DrawOverrideField("Preset", isRoot);
             DrawOverrideField("ViewDistanceCm", isRoot);
-            DrawOverrideField("BoneWeights", isRoot);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("ComplexityStrategy"));
+            DrawBoneWeightsField(isRoot);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("ExcludeList"), true);
 
             serializedObject.ApplyModifiedProperties();
@@ -48,6 +47,25 @@ namespace Narazaka.VRChat.Jnto.Editor
                 EditorGUILayout.PropertyField(p.FindPropertyRelative("Value"), GUIContent.none);
             }
             EditorGUILayout.EndHorizontal();
+        }
+
+        void DrawBoneWeightsField(bool forceHasValue)
+        {
+            var p = serializedObject.FindProperty("BoneWeights");
+            var hv = p.FindPropertyRelative("HasValue");
+            if (forceHasValue) hv.boolValue = true;
+
+            using (new EditorGUI.DisabledScope(forceHasValue))
+            {
+                EditorGUILayout.PropertyField(hv, new GUIContent("Bone Weights"));
+            }
+            if (hv.boolValue)
+            {
+                var entries = p.FindPropertyRelative("Value").FindPropertyRelative("Entries");
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(entries, new GUIContent("Weights"), true);
+                EditorGUI.indentLevel--;
+            }
         }
 
         static bool HasAncestorOptimizer(TextureOptimizer self)
