@@ -18,8 +18,6 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
 
         static LilToonCoreCatalogData()
         {
-            const string SEED = "(seed from prev catalog)";
-
             // --- Color + alpha 使用 ----
             void ColorA(string prop, string evidence) => Table.Add((null, prop), new LilToonPropertyInfo(ShaderUsage.Color, RGBA, evidence));
             // _MainTex: LIL_SAMPLE_2D(_MainTex, ...) → fd.col (float4), all channels used via fd.col *= _Color
@@ -62,9 +60,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
 
             // --- Color + alpha 不使用 ----
             void ColorRgb(string prop, string evidence) => Table.Add((null, prop), new LilToonPropertyInfo(ShaderUsage.Color, RGB, evidence));
-            // _OutlineTex: LIL_SAMPLE_2D → fd.col (float4), but only .rgb is used in tone correction and lit apply
-            // Contract: OutlineTex_ColorNoAlpha test asserts AlphaUsed=false
-            ColorRgb("_OutlineTex",           "Includes/lil_common_frag.hlsl:364");
+            // _OutlineTex: LIL_SAMPLE_2D → fd.col (float4); fd.col.a *= _OutlineColor.a (lil_common_frag.hlsl:389)
+            // In cutout (LIL_RENDER==1) fd.col.a drives alpha test; in transparent (LIL_RENDER==2) clip(fd.col.a-_Cutoff)
+            // → texture alpha IS used in non-opaque outline variants → corrected to Color+RGBA
+            ColorA("_OutlineTex",             "Includes/lil_common_frag.hlsl:364 + lil_pass_forward_normal.hlsl:232 (cutout/transparent alpha)");
             // _MatCapBlendMask: LIL_SAMPLE_2D_ST → .rgb only (matCapMask = tex.rgb)
             ColorRgb("_MatCapBlendMask",      "Includes/lil_common_frag.hlsl:1557");
             // _MatCap2ndBlendMask: same pattern
@@ -96,12 +95,11 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             // _MatCap2ndBumpMap: same pattern
             NormalAG("_MatCap2ndBumpMap",    "Includes/lil_common_frag.hlsl:1597");
 
-            // --- Normal + RGB 参照 (alpha 不使用) ----
-            void NormalRgb(string prop, string evidence) => Table.Add((null, prop), new LilToonPropertyInfo(ShaderUsage.Normal, RGB, evidence));
-            // _OutlineBumpMap: not found in any lil_common* hlsl (likely outline-specific) → Task 13
-            NormalRgb("_OutlineBumpMap",     SEED);
-            // _OutlineVectorTex: lilGetOutlineVector → lilUnpackNormalScale; classified as RGB per spec/contract test
-            NormalRgb("_OutlineVectorTex",   "Includes/lil_common_functions.hlsl:293");
+            // _OutlineBumpMap: searched Packages/jp.lilxyzw.liltoon entire package → 0 hits → does NOT exist in this version
+            // Seed entry was a legacy artifact; removed (Task 13 audit).
+            // _OutlineVectorTex: lilGetOutlineVector (lil_common_functions.hlsl:293) → lilUnpackNormalScale
+            //   lilUnpackNormalScale uses .ag (DXT5nm path, line 176) same as _BumpMap → NormalAG
+            NormalAG("_OutlineVectorTex",   "Includes/lil_common_functions.hlsl:293 (lilUnpackNormalScale .ag same as _BumpMap)");
 
             // _ShadowStrengthMask: SDF face shadow mode (_ShadowMaskType == 2) reads all RGBA
             //   Includes/lil_common_frag.hlsl:957 → shadowStrengthMask.g / .r (LdotR sign branch)

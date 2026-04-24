@@ -31,13 +31,14 @@ public class LilToonCoreCatalogSeedTests
         Assert.IsTrue(i.AlphaUsed, "DXT5nm packs normal X into alpha");
     }
 
-    [Test] public void OutlineVectorTex_NormalNoAlpha()
+    // _OutlineVectorTex: lilGetOutlineVector → lilUnpackNormalScale uses .ag (DXT5nm path) same as _BumpMap → NormalAG → alpha used
+    [Test] public void OutlineVectorTex_NormalAlpha()
     {
         var s = GetLilToonShader();
         if (s == null) Assert.Ignore();
         Assert.IsTrue(LilToonPropertyCatalog.TryGet(s, "_OutlineVectorTex", out var i));
         Assert.AreEqual(ShaderUsage.Normal, i.Usage);
-        Assert.IsFalse(i.AlphaUsed);
+        Assert.IsTrue(i.AlphaUsed, "lilUnpackNormalScale DXT5nm path reads .ag (A used)");
     }
 
     // _ShadowStrengthMask: SDF face shadow mode (_ShadowMaskType==2) reads .rgba all.
@@ -52,13 +53,14 @@ public class LilToonCoreCatalogSeedTests
         Assert.IsTrue(i.AlphaUsed);
     }
 
-    [Test] public void OutlineTex_ColorNoAlpha()
+    // _OutlineTex: fd.col.a *= _OutlineColor.a; cutout/transparent passes use fd.col.a for alpha test → RGBA
+    [Test] public void OutlineTex_ColorAlpha()
     {
         var s = GetLilToonShader();
         if (s == null) Assert.Ignore();
         Assert.IsTrue(LilToonPropertyCatalog.TryGet(s, "_OutlineTex", out var i));
         Assert.AreEqual(ShaderUsage.Color, i.Usage);
-        Assert.IsFalse(i.AlphaUsed);
+        Assert.IsTrue(i.AlphaUsed, "cutout/transparent outline variants use fd.col.a for alpha test (lil_pass_forward_normal.hlsl:232)");
     }
 
     [Test] public void EmissionBlendMask_ColorAlpha_RegressionGuard()
