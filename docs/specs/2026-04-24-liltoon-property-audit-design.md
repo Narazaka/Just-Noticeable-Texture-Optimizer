@@ -46,6 +46,12 @@
 ## データモデル
 
 ```csharp
+// ShaderUsage は既存の Phase2.Compression.ShaderUsage を再利用する。
+// 新 sampling pattern が見つかった場合は既存値に丸めず、この spec 修正 +
+// FormatCandidateSelector への case 追加をセットで行い、Phase2.Compression.ShaderUsage に
+// 新値を追加する。enum の物理的な場所はレイヤー的に曖昧さがあるが、現状唯一の
+// ShaderUsage 定義が Phase2.Compression 配下にあるため、重複定義を避けて再利用する判断。
+
 namespace Narazaka.VRChat.Jnto.Editor.Shared
 {
     [Flags]
@@ -60,17 +66,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
         RGBA = R | G | B | A,
     }
 
-    public enum ShaderUsage
-    {
-        Color,
-        Normal,
-        SingleChannel,
-        // 新 pattern が見つかった場合のみ、この spec 修正 + FormatCandidateSelector の case 追加をセットで行う
-    }
-
     public readonly struct LilToonPropertyInfo
     {
-        public readonly ShaderUsage Usage;
+        public readonly Phase2.Compression.ShaderUsage Usage;   // 既存 enum を再利用
         public readonly ChannelMask ReadChannels;
         public readonly string EvidenceRef;
 

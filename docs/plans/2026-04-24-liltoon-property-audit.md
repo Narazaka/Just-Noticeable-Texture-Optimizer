@@ -27,6 +27,7 @@ Create `Packages/net.narazaka.vrchat.jnto/Editor/Shared/LilToonPropertyInfo.cs`:
 
 ```csharp
 using System;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
 
 namespace Narazaka.VRChat.Jnto.Editor.Shared
 {
@@ -47,19 +48,9 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
     }
 
     /// <summary>
-    /// shader がテクスチャをどう使うかの意味論ラベル。
-    /// 新 sampling pattern が見つかった場合は既存値に丸めず、spec 修正と
-    /// FormatCandidateSelector への case 追加をセットで行い新値を追加する。
-    /// </summary>
-    public enum ShaderUsage
-    {
-        Color,
-        Normal,
-        SingleChannel,
-    }
-
-    /// <summary>
     /// lilToon プロパティ 1 エントリ分の分類情報。
+    /// Usage は既存の <see cref="Phase2.Compression.ShaderUsage"/> を再利用する
+    /// (重複定義を避けるため)。
     /// </summary>
     public readonly struct LilToonPropertyInfo
     {
@@ -78,6 +69,8 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
     }
 }
 ```
+
+**ShaderUsage の扱い**: 既存 `Editor/Phase2/Compression/ShaderUsage.cs` に同名 enum が定義されているため、新しく `Shared` 名前空間に再定義せず、`using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;` で取り込んで再利用する。レイヤー的には `Shared` が `Phase2` に依存する形になるが、重複定義を避ける判断。新 sampling pattern が見つかって新 `ShaderUsage` 値を追加する場合も `Phase2.Compression.ShaderUsage` に追記する。
 
 - [ ] **Step 2: .meta は Unity が自動生成させる**
 
