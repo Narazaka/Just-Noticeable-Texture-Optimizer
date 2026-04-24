@@ -100,6 +100,10 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             // _OutlineVectorTex: lilGetOutlineVector (lil_common_functions.hlsl:293) → lilUnpackNormalScale
             //   lilUnpackNormalScale uses .ag (DXT5nm path, line 176) same as _BumpMap → NormalAG
             NormalAG("_OutlineVectorTex",   "Includes/lil_common_functions.hlsl:293 (lilUnpackNormalScale .ag same as _BumpMap)");
+            // _AnisotropyTangentMap: LIL_SAMPLE_2D_ST → anisoTangentMap (float4),
+            //   then lilUnpackNormalScale(anisoTangentMap, 1.0) → uses .ag (DXT5nm path, same as _BumpMap)
+            //   (lil_common_frag.hlsl:606/622)
+            NormalAG("_AnisotropyTangentMap", "Includes/lil_common_frag.hlsl:606 → lilUnpackNormalScale .ag (DXT5nm, same as _BumpMap)");
 
             // _ShadowStrengthMask: SDF face shadow mode (_ShadowMaskType == 2) reads all RGBA
             //   Includes/lil_common_frag.hlsl:957 → shadowStrengthMask.g / .r (LdotR sign branch)
@@ -150,6 +154,14 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             SingleR("_AudioLinkLocalMap",         "Includes/lil_common_frag.hlsl:683");
             // _RimShadeMask: LIL_SAMPLE_2D → .r only (rim *=)
             SingleR("_RimShadeMask",              "Includes/lil_common_frag.hlsl:1213");
+            // _AnisotropyScaleMask: LIL_SAMPLE_2D_ST → .r only (fd.anisotropy *=)
+            SingleR("_AnisotropyScaleMask",       "Includes/lil_common_frag.hlsl:612");
+            // _AnisotropyShiftNoiseMask: LIL_SAMPLE_2D_ST → .r only (anisotropyShiftNoise = .r - 0.5)
+            SingleR("_AnisotropyShiftNoiseMask",  "Includes/lil_common_frag.hlsl:1368");
+            // _DitherTex: lilSamplePointRepeat(_DitherTex, ...) → .r only (* 255 + 1)
+            //   Confirmed all three OVERRIDE_DITHER definitions use .r only.
+            //   (lil_common_frag.hlsl:531/538/544)
+            SingleR("_DitherTex",                 "Includes/lil_common_frag.hlsl:531");
 
             // -----------------------------------------------------------------------
             // Fur / FurOnly variant-specific props
