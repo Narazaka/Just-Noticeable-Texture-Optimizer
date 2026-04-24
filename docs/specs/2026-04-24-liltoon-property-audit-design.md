@@ -1,10 +1,34 @@
 # lilToon プロパティカタログ網羅監査 設計
 
 - Date: 2026-04-24
+- **Audit 完了日: 2026-04-25**
 - Scope: `Packages/net.narazaka.vrchat.jnto`
 - lilToon 検証対象版: `jp.lilxyzw.liltoon` 2.3.2（`Packages/jp.lilxyzw.liltoon/package.json`）
 - カスタムシェーダー同梱拡張対象: `jp.sigmal00.uzumore-shader` 1.0.16
 - Precedent: 直近コミット `638b30d fix: EmissionBlendMask is Color not SingleChannel` で `_EmissionBlendMask` / `_Emission2ndBlendMask` の誤分類が判明。同種の取りこぼしを網羅的に洗い出すのが目的。
+
+## 完了サマリ (2026-04-25)
+
+- **catalog エントリ数**: core 55 件 (共通 `variantId=null`) + fur 固有 28 件 (4 prop × 7 variants) + lite 固有 12 件 (_TriMask × 12 variants) + Uzumore 拡張 1 件 = 計 96 件
+- **seed から修正された誤分類** 9 件:
+  - `_Main2ndBlendMask`, `_Main3rdBlendMask`: Color+RGBA → SingleChannel+R (`.r` のみ)
+  - `_ShadowBlurMask`, `_ShadowBorderMask`: SingleChannel+R → Color+RGB (3 channel で 3 shadow param 分配)
+  - `_GlitterShapeTex`: Color+RGB → Color+RGBA (`.rgb * .a`)
+  - `_AudioLinkMask`: Color+RGBA → Color+R|G (`.r`/`.g` のみ)
+  - `_MainGradationTex`: Color+RGBA → Color+RGB (`.rgb` のみ)
+  - `_RimShadeMask`: Color+RGBA → SingleChannel+R (`.r` のみ)
+  - `_ShadowStrengthMask`: SingleChannel+R → Color+RGBA (SDF face shadow で `.rgba` 全読み)
+  - `_OutlineTex`: Color+RGB → Color+RGBA (cutout/transparent outline で `fd.col.a` alpha test)
+  - `_OutlineVectorTex`: Normal+RGB → Normal+A|G (lilUnpackNormalScale DXT5nm `.ag`)
+  - `_OutlineBumpMap`: lilToon 2.3.2 に存在しない legacy entry → 削除
+- **新規発見プロパティ** (seed 未収録):
+  - 共通: `_DitherTex` (SingleChannel+R), `_AnisotropyTangentMap` (Normal+A|G), `_AnisotropyScaleMask` (SingleChannel+R), `_AnisotropyShiftNoiseMask` (SingleChannel+R)
+  - Fur variants: `_FurNoiseMask`, `_FurMask`, `_FurLengthMask` (SingleChannel+R), `_FurVectorTex` (Normal+A|G)
+  - Lite variants: `_TriMask` (Color+RGB)
+  - Uzumore: `_UzumoreMask` (SingleChannel+R)
+- **同梱拡張**: `UzumoreTextureCatalogExtension` (`Editor/Shared/Extensions/UzumoreTextureCatalogExtension.cs`)
+- **テスト結果**: 全 429 editor test PASS (監査品質テスト + 既存 regression 含む)
+- **新 `ShaderUsage` 値**: 追加なし。既存 3 値 (Color / Normal / SingleChannel) で全 lilToon 2.3.2 の sampling pattern を網羅できた
 
 ## 背景
 
