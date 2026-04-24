@@ -199,6 +199,47 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
             FurEntry("_FurVectorTex",
                 new LilToonPropertyInfo(ShaderUsage.Normal, A | G,
                     "Includes/lil_common_vert_fur.hlsl:172 → lilUnpackNormalScale .ag (DXT5nm, same as _BumpMap); lil_common_functions.hlsl:176"));
+
+            // -----------------------------------------------------------------------
+            // Gem / Refraction variant audit (Task 15)
+            //
+            // Target variants:
+            //   lts_gem, ltsmulti_gem   → lil_pass_forward_gem.hlsl  (define LIL_GEM)
+            //   lts_ref, ltsmulti_ref   → lil_pass_forward.hlsl      (define LIL_REFRACTION)
+            //   lts_ref_blur            → lil_pass_forward_refblur.hlsl (define LIL_REFRACTION + LIL_REFRACTION_BLUR2)
+            //
+            // 2D texture sampling audit result:
+            //
+            // lil_pass_forward_gem.hlsl:229
+            //   LIL_SAMPLE_2D(_SmoothnessTex, sampler_MainTex, fd.uvMain).r
+            //   → already covered by common entry (null, "_SmoothnessTex") SingleChannel+R
+            //
+            // lil_pass_forward_refblur.hlsl:47
+            //   LIL_SAMPLE_2D_ST(_SmoothnessTex, lil_sampler_linear_repeat, fd.uvMain).r
+            //   → already covered by common entry (null, "_SmoothnessTex") SingleChannel+R
+            //
+            // lts_ref / ltsmulti_ref: use lil_pass_forward.hlsl (standard path, no extra 2D samples)
+            //   All sampled textures fall through to common entries.
+            //
+            // Gem-specific properties that are NOT 2D textures (excluded from catalog):
+            //   _GemChromaticAberration, _GemEnvContrast, _GemEnvColor, _GemParticleLoop,
+            //   _GemParticleColor, _GemVRParallaxStrength → all float/Color uniforms, not textures
+            //
+            // Refraction-specific properties that are NOT 2D textures (excluded from catalog):
+            //   _RefractionStrength, _RefractionFresnelPower → float uniforms
+            //   _RefractionColor                            → Color uniform (no 2D texture)
+            //   _RefractionColorFromMain                    → bool uniform
+            //
+            // Screen-space grab texture (_lilBackgroundTexture):
+            //   Used via LIL_GET_BG_TEX() / LIL_GET_GRAB_TEX() macros — runtime screen grab,
+            //   not a material 2D texture property → excluded from catalog.
+            //
+            // Cubemap (_ReflectionCubeTex):
+            //   Cube texture sampled via LIL_SAMPLE_CUBE → excluded from 2D catalog per spec.
+            //
+            // Conclusion: NO variant-specific catalog entries needed for gem/refraction variants.
+            //   All 2D textures sampled by these variants are covered by existing common entries.
+            // -----------------------------------------------------------------------
         }
 
         internal static bool TryGet(string variantId, string propName, out LilToonPropertyInfo info)
