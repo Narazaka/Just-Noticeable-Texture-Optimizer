@@ -201,6 +201,54 @@ namespace Narazaka.VRChat.Jnto.Editor.Shared
                     "Includes/lil_common_vert_fur.hlsl:172 → lilUnpackNormalScale .ag (DXT5nm, same as _BumpMap); lil_common_functions.hlsl:176"));
 
             // -----------------------------------------------------------------------
+            // Lite variant audit (Task 17)
+            //
+            // Target variants (all use lil_pass_forward_lite.hlsl with LIL_LITE defined):
+            //   ltsl, ltsl_cutout, ltsl_cutout_o, ltsl_o,
+            //   ltsl_onetrans, ltsl_onetrans_o, ltsl_overlay, ltsl_overlay_one,
+            //   ltsl_trans, ltsl_trans_o, ltsl_twotrans, ltsl_twotrans_o (12 variants)
+            //
+            // lil_pass_forward_lite.hlsl:169 (unconditional in non-outline branch):
+            //   fd.triMask = LIL_SAMPLE_2D(_TriMask, sampler_MainTex, fd.uvMain);
+            //   fd.triMask.r → matcap blend weight  (lil_common_frag.hlsl:1572)
+            //   fd.triMask.g → rim blend weight      (lil_common_frag.hlsl:1740)
+            //   fd.triMask.b → emission blend weight (lil_common_frag.hlsl:1881)
+            //   fd.triMask.a → never referenced → alpha NOT used
+            //   → Color + RGB (no alpha)
+            //
+            // All other 2D textures sampled in lite paths:
+            //   _MainTex     : OVERRIDE_MAIN → LIL_GET_MAIN_TEX → same RGBA as common entry
+            //   _ShadowColorTex / _Shadow2ndColorTex : lit path uses LIL_SAMPLE_2D (no _ST),
+            //     but channel usage is identical (.rgb color + .a blend weight) → common RGBA entry covers
+            //   _MatCapTex   : lite uses .rgb only (lil_common_frag.hlsl:1571), common entry is RGBA;
+            //     conservative superset is safe — no per-variant override needed
+            //   _EmissionMap : lite uses LIL_GET_EMITEX → float4 then only .rgb used; common RGBA is conservative
+            //   _OutlineTex / _OutlineWidthMask : outline pass uses same paths as normal variants → covered by common
+            //
+            // Conclusion: only _TriMask requires a new lite-specific entry.
+            //   ltspass_lite_* hidden pass shaders are rendering infrastructure (UsePass targets),
+            //   not user-facing variant IDs → excluded from catalog.
+            // -----------------------------------------------------------------------
+            string[] liteVariants = {
+                "ltsl", "ltsl_cutout", "ltsl_cutout_o", "ltsl_o",
+                "ltsl_onetrans", "ltsl_onetrans_o", "ltsl_overlay", "ltsl_overlay_one",
+                "ltsl_trans", "ltsl_trans_o", "ltsl_twotrans", "ltsl_twotrans_o"
+            };
+
+            void LiteEntry(string prop, LilToonPropertyInfo info)
+            {
+                foreach (var v in liteVariants)
+                    Table.Add((v, prop), info);
+            }
+
+            // _TriMask: LIL_SAMPLE_2D(_TriMask, sampler_MainTex, fd.uvMain) → fd.triMask (float4)
+            //   .r used for matcap blend, .g for rim, .b for emission. .a never read.
+            //   (lil_pass_forward_lite.hlsl:169 ; lil_common_frag.hlsl:1572/1740/1881)
+            LiteEntry("_TriMask",
+                new LilToonPropertyInfo(ShaderUsage.Color, RGB,
+                    "Includes/lil_pass_forward_lite.hlsl:169 ; .r=matcap .g=rim .b=emission .a=unused"));
+
+            // -----------------------------------------------------------------------
             // Gem / Refraction variant audit (Task 15)
             //
             // Target variants:
