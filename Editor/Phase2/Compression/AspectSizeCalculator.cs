@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Narazaka.VRChat.Jnto.Editor.Phase2
+namespace Narazaka.VRChat.Jnto.Editor.Phase2.Compression
 {
     /// <summary>
     /// 縮小後のアスペクト維持サイズ計算。

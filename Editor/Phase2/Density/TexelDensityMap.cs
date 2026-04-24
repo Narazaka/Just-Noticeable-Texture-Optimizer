@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Narazaka.VRChat.Jnto.Editor.Phase2
+namespace Narazaka.VRChat.Jnto.Editor.Phase2.Density
 {
     public class TexelDensityMap
     {

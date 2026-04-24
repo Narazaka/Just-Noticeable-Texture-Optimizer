@@ -6,6 +6,7 @@ using Narazaka.VRChat.Jnto;
 using Narazaka.VRChat.Jnto.Editor.Phase1;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Cache;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Compression;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Density;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;

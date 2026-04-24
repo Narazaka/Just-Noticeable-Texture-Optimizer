@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Narazaka.VRChat.Jnto;
-using Narazaka.VRChat.Jnto.Editor.Phase2;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Density;
 
 namespace Narazaka.VRChat.Jnto.Editor.Phase2.Tiling
 {

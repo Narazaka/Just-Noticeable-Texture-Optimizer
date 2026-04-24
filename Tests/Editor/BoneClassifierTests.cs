@@ -1,6 +1,6 @@
 using NUnit.Framework;
 using Narazaka.VRChat.Jnto;
-using Narazaka.VRChat.Jnto.Editor.Phase2;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Density;
 
 public class BoneClassifierTests
 {

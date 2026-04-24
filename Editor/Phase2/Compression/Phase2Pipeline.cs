@@ -3,6 +3,7 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Profiling;
 using Narazaka.VRChat.Jnto;
+using Narazaka.VRChat.Jnto.Editor.Phase2.Density;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
