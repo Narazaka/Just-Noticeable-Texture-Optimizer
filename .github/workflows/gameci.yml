@@ -44,4 +44,4 @@ jobs:
         include:
           - unity: 2022.3.22f1
             ndmf: 1.11.0
-            vrcsdk-version: 3.7.4
+            vrcsdk-version: 3.10.3
