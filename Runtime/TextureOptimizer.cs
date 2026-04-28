@@ -5,7 +5,7 @@ using VRC.SDKBase;
 namespace Narazaka.VRChat.Jnto
 {
     [DisallowMultipleComponent]
-    [AddComponentMenu("Just-Noticeable Texture Optimizer/Texture Optimizer")]
+    [AddComponentMenu("Just-Noticeable Texture Optimizer")]
     public class TextureOptimizer : MonoBehaviour, IEditorOnly
     {
         public TextureOptimizerMode Mode = TextureOptimizerMode.Root;
