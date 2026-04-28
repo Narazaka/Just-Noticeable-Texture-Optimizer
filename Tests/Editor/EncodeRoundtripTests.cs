@@ -7,6 +7,7 @@ using Narazaka.VRChat.Jnto.Editor.Tests.Fixtures;
 /// バグ#5 回帰防止: TextureEncodeDecode.EncodeAndDecode と最終 Encode が
 /// 同じ compress 結果になることを確認 (verify と最終出力の品質ズレ防止)。
 /// </summary>
+[Category("GPU")]
 public class EncodeRoundtripTests
 {
     [Test]

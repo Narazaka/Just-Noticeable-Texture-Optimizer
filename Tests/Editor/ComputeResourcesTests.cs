@@ -2,6 +2,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 
+[Category("GPU")]
 public class ComputeResourcesTests
 {
     [Test]

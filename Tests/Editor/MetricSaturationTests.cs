@@ -14,6 +14,7 @@ using Narazaka.VRChat.Jnto.Editor.Tests.Fixtures;
 ///   - BlockBoundary: candidate のみ → orig=cand でも非ゼロ (grid tex では saturate)。
 /// 本テストは修正後に Pass することを期待する (修正前は fail)。
 /// </summary>
+[Category("GPU")]
 public class MetricSaturationTests
 {
     // ---- MSSL ----

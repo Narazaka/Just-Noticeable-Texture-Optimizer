@@ -13,6 +13,7 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 /// 異常作動していれば score > 0 になる。
 /// 同時に完全一致 (orig==cand) のスコアを非常に低く保つことも検証。
 /// </summary>
+[Category("GPU")]
 public class BandingBinClampTests
 {
     [Test]

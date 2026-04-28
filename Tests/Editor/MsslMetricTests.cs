@@ -4,6 +4,7 @@ using Narazaka.VRChat.Jnto.Editor.Phase2.Gate;
 using Narazaka.VRChat.Jnto.Editor.Phase2.GpuPipeline;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Tiling;
 
+[Category("GPU")]
 public class MsslMetricTests
 {
     [Test]

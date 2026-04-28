@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEngine;
 using Narazaka.VRChat.Jnto.Editor.Phase2.Reporting;
 
+[Category("EditorWindow")]
 public class JntoReportWindowTests
 {
     [Test]

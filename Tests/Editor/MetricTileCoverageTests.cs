@@ -11,6 +11,7 @@ using Narazaka.VRChat.Jnto.Editor.Tests.Fixtures;
 /// TilesX/8 × TilesY/8 タイルしか走らず、残り 98% は score=0 になっていた。
 /// 各タイルに別々のパターンを仕込み、score 分布が「ばらつく」ことを assert する。
 /// </summary>
+[Category("GPU")]
 public class MetricTileCoverageTests
 {
     [Test]
